@@ -1,0 +1,45 @@
+Build "Debunkr", a fast "paste, check, share" AI misinformation checker website. Match the attached design screenshots exactly (layout, colors, Plus Jakarta Sans font, 16px rounded cards, verdict mood themes). Do not redesign anything. Do not ask me questions; make sensible choices and list anything you skipped at the end.
+
+CREDIT RULES
+- Build everything in the order below in one run. Don't rewrite working code, don't create extra docs, don't add features I didn't list.
+- If something fails twice, skip it, keep the rest working, and list it at the end with the exact error.
+- Never ask me to paste the API key in chat. It is already saved in Replit Secrets as GEMINI_API_KEY.
+
+STACK AND HOSTING (Replit)
+- Frontend: React + Vite + Tailwind + Framer Motion.
+- Backend: one small Node.js Express server in the same project. It serves the built frontend and exposes POST /api/check. Listen on process.env.PORT (default 5000) on 0.0.0.0. No database.
+- The server reads process.env.GEMINI_API_KEY and sends it in the x-goog-api-key header. Never put the key in browser code, in URLs, in logs, or in any VITE_ variable.
+- Make it work with the Run button and with Replit Deployments.
+
+STEP 1: BACKEND (build and test first)
+- POST /api/check accepts {claim, language, imageBase64?, imageMime?}. If the input is a question ("is earth flat"), rewrite it into a claim first. If a link is given, use the URL as the claim to look up.
+- Call the Gemini generateContent REST API with a current Gemini Flash model that supports Grounding with Google Search, enabled with tools: [{ google_search: {} }]. Do NOT use JSON response mode together with search. Instead tell the model to return ONLY JSON, strip code fences, parse safely, and retry once if parsing fails.
+- Return this JSON:
+{ "overall_verdict": "TRUE|FALSE|UNCLEAR", "action": "Safe to share|Don't share this|Wait for more evidence", "summary": "", "calm_reply": "2 polite sentences with the verdict, the key reason and one source name", "claims": [ { "text": "", "verdict": "TRUE|FALSE|UNCLEAR", "explanation": "", "explanation_simple": "very short sentences, everyday words", "explanation_elder": "calm and respectful with a short real-life example", "evidence_strength": 0, "evidence_breakdown": { "supporting": 0, "disputing": 0, "neutral": 0 }, "red_flags": [], "tactics": [], "tactic_explanations": [], "why_it_spreads": "", "sources": [ { "publisher": "", "title": "", "url": "", "type": "News|Research|Government|Health org" } ] } ] }
+- Build "sources" ONLY from the response's groundingMetadata (groundingChunks and groundingSupports), never from URLs written by the model. If there is no grounding data, or the API says search is not available for this key or model, return UNCLEAR with the message "Live search is unavailable right now" instead of guessing, and log the exact error on the server.
+- Tactics only from: Fear tactic, Fake authority, Cherry-picked data, Out of context, Emotional bait, Too good to be true, Old news recycled. Empty list for TRUE claims.
+- AI rules (put in the system prompt): never invent sources; return UNCLEAR when evidence is limited or conflicting; plain language; for dangerous health claims tell people to contact local medical or emergency services; evidence_strength means how strongly the evidence supports the verdict, not the chance the claim is true; simple explanations must never change the verdict.
+- Language: write explanation, tactic and reply text in the requested language (English, Hindi, Spanish, French). Keep JSON keys and verdict values in English.
+- Image check: if an image is provided, have Gemini read the text and claims in it, then run the same flow. On the client, resize/compress to max 1600px and under 3MB before upload (PNG/JPG only).
+- Limit text input to 2,000 characters, validate URLs are http(s), add basic rate limiting, return specific errors (key missing, invalid key, search unavailable, rate limit reached, unreadable response). Log HTTP status and error text on the server, never the key.
+- Test with "The Earth is flat", one true claim and one unclear claim before building the UI, and tell me the results.
+
+STEP 2: SCREENS
+- Nav: Debunkr logo (no brackets), "Fact check", and a language selector (English, Hindi, Spanish, French). No History tab, no avatar, no game.
+- Home: headline "Is it true? Let's find out.", input card with tabs "Claim or link" and "Upload image" (drag and drop), Check button, 3 larger tappable example chips, how-it-works row, and a typing animation in the placeholder that rotates example claims.
+- Analysis: animated 4-step tracker (Reading, Searching sources, Weighing evidence, Verdict) with skeleton loaders and the scan effect described in Step 3.
+- Results: the original text with highlighted claims; clicking a claim slides in an explanation panel with: verdict badge; a toggle "Standard | Like I'm 12 | For my grandparent" that swaps the text with a fade and no new API call; animated evidence-strength bar; an agreement bar showing supporting/disputing/neutral counts; red flags; tactic badges (rounded, with an icon, click for a popover); a "Why does this spread?" card; and source cards with type tags that fade in one by one.
+- Under the overall verdict show the "action" line and a "Copy a calm reply" button.
+- Share button opens a modal with a 1080x1080 preview card (logo, claim, verdict badge in mood colors, one-sentence reason, evidence strength, top 2 source names, footer "Checked with Debunkr. AI can make mistakes."). Buttons: Download PNG (html-to-image), Copy text, and Share (Web Share API, otherwise copy).
+- Footer on every page: "AI can make mistakes. Follow the evidence, not just the verdict."
+- Handle missing fields safely (hide the section instead of crashing). Loading, error and retry states everywhere. Fully responsive on mobile.
+
+STEP 3: WOW MOMENTS (Framer Motion only, no heavy new libraries)
+- HOME HERO X-RAY SCAN: a card styled like a generic viral chat message (no brand logos) with the fake forward "Drinking hot water kills the virus. Doctors don't want you to know this. Share with everyone!" A glowing indigo scan line sweeps top to bottom over 2 seconds; each sentence highlights in turn (red, amber, green) with a small icon and label. Then a "FALSE" stamp slams in with a scale and rotation bounce and a very small card shake. Pause, fade, and loop with a second TRUE example (green highlights, "Looks legit!" badge, light confetti). Place it right of the headline on desktop and below it on mobile. The input card remains the main call to action.
+- ANALYSIS SCAN: show the user's own claim text with the same scan line moving over it while the request runs, lighting up segments as the steps progress.
+- VERDICT THEATER on results: TRUE brightens with a confetti burst, a tilted "Looks legit!" badge and a warm yellow-green glow; FALSE dims the page, closes a red vignette, slams the FALSE stamp with a small shake and a pulsing alert icon; UNCLEAR fades to calm amber with a gentle question icon. Animate the evidence-strength number counting up.
+- EVIDENCE WEB (do last): a small animated graph with the claim in the center and source nodes connected by lines (green supports, red disputes, gray neutral); hover or tap a node shows the source name. If it doesn't work within two attempts, skip it and keep the agreement bar.
+
+QUALITY
+- Respect prefers-reduced-motion with static highlighted versions. Pair every verdict color with an icon and a text label. Keep animations smooth and light so the page loads fast. Body text at least 14px, source URLs at least 12px with good contrast on dark screens.
+- At the end, give me a short list: what works, what was skipped and why, and what I need to do before submitting.
