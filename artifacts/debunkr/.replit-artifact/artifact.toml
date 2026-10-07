@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Debunkr"
+description = "A fast, evidence-led misinformation checker. Paste a claim or link, upload an image, review sources and verdicts, and share a calm, sourced reply."
+version = "1.0.0"
+id = "artifacts/debunkr"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18708
+
+[services.development]
+run = "pnpm --filter @workspace/debunkr run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/debunkr", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/debunkr/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18708"
+BASE_PATH = "/"

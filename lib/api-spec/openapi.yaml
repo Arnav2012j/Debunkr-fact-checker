@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: fact-check
+    description: Evidence-grounded claim analysis
 paths:
   /healthz:
     get:
@@ -24,6 +26,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /check:
+    post:
+      operationId: checkClaim
+      tags: [fact-check]
+      summary: Check a claim against live sources
+      description: Analyzes a claim or image and returns a verdict with sources grounded by Google Search.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInput"
+      responses:
+        "200":
+          description: Claim analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckResult"
+        "400":
+          description: Invalid claim, language, URL, or image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Gemini API key is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Rate limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Request body is too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Live search is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Gemini returned an unreadable response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +90,116 @@ components:
           type: string
       required:
         - status
+    CheckInput:
+      type: object
+      additionalProperties: false
+      properties:
+        claim:
+          type: string
+          maxLength: 2000
+        language:
+          type: string
+          enum: [English, Hindi, Spanish, French]
+        imageBase64:
+          type: string
+          description: Base64-encoded PNG or JPEG image, without a data URL prefix.
+        imageMime:
+          type: string
+          enum: [image/png, image/jpeg]
+      required: [language]
+      anyOf:
+        - required: [claim]
+        - required: [imageBase64]
+    CheckResult:
+      type: object
+      properties:
+        overall_verdict:
+          type: string
+          enum: ["TRUE", "FALSE", "UNCLEAR"]
+        action:
+          type: string
+          enum: [Safe to share, Don't share this, Wait for more evidence]
+        summary:
+          type: string
+        calm_reply:
+          type: string
+        claims:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckedClaim"
+      required: [overall_verdict, action, summary, calm_reply, claims]
+    CheckedClaim:
+      type: object
+      properties:
+        text:
+          type: string
+        verdict:
+          type: string
+          enum: ["TRUE", "FALSE", "UNCLEAR"]
+        explanation:
+          type: string
+        explanation_simple:
+          type: string
+        explanation_elder:
+          type: string
+        evidence_strength:
+          type: integer
+          minimum: 0
+          maximum: 100
+        evidence_breakdown:
+          $ref: "#/components/schemas/EvidenceBreakdown"
+        red_flags:
+          type: array
+          items:
+            type: string
+        tactics:
+          type: array
+          items:
+            type: string
+            enum: [Fear tactic, Fake authority, Cherry-picked data, Out of context, Emotional bait, Too good to be true, Old news recycled]
+        tactic_explanations:
+          type: array
+          items:
+            type: string
+        why_it_spreads:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/CheckSource"
+      required: [text, verdict, explanation, explanation_simple, explanation_elder, evidence_strength, evidence_breakdown, red_flags, tactics, tactic_explanations, why_it_spreads, sources]
+    EvidenceBreakdown:
+      type: object
+      properties:
+        supporting:
+          type: integer
+          minimum: 0
+        disputing:
+          type: integer
+          minimum: 0
+        neutral:
+          type: integer
+          minimum: 0
+      required: [supporting, disputing, neutral]
+    CheckSource:
+      type: object
+      properties:
+        publisher:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+        type:
+          type: string
+          enum: [News, Research, Government, Health org]
+      required: [publisher, title, url, type]
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      required: [error, code]
 
