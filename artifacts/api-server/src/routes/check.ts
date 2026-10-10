@@ -96,7 +96,14 @@ router.post("/check", async (req, res): Promise<void> => {
   }
 
   try {
-    const result = await checkWithGemini({ ...input, claim });
+    const result = await checkWithGemini({ ...input, claim }, (event) => {
+      const details = {
+        ...event,
+        ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
+      };
+      if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
+      else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
+    });
     res.json(result);
   } catch (error) {
     if (error instanceof LiveSearchUnavailableError) {

@@ -1,7 +1,16 @@
 import { CheckClaimResponse } from "@workspace/api-zod";
 
-const MODEL = "gemini-3.8-flash";
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const MODELS = ["gemini-3.8-flash", "gemini-3.6-flash"] as const;
+const MAX_HTTP_ATTEMPTS = 3;
+export interface GeminiAttemptEvent {
+  model: string;
+  attempt: number;
+  status: number;
+  errorText?: string;
+  retryDelayMs?: number;
+  grounded?: boolean;
+}
+type AttemptLogger = (event: GeminiAttemptEvent) => void;
 const ALLOWED_TACTICS = new Set([
   "Fear tactic",
   "Fake authority",
@@ -292,8 +301,9 @@ Use this exact shape:
 Rules: Use only these tactic labels: Fear tactic, Fake authority, Cherry-picked data, Out of context, Emotional bait, Too good to be true, Old news recycled. Use an empty tactics list for TRUE claims. Return UNCLEAR when evidence is limited or conflicting. Use plain language. For dangerous health claims, tell people to contact local medical or emergency services. evidence_strength is how strongly the evidence supports the verdict, not the chance the claim is true. Simple explanations must never change the verdict.`;
 }
 
-async function requestGemini(
+async function requestGeminiOnce(
   input: FactCheckInput,
+  model: string,
   retryInstruction = "",
 ): Promise<unknown> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -321,7 +331,7 @@ async function requestGemini(
 
   let response: Response;
   try {
-    response = await fetch(API_URL, {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -361,6 +371,33 @@ async function requestGemini(
     const message = error instanceof Error ? error.message : String(error);
     throw new UnreadableGeminiResponseError(message);
   }
+}
+
+async function requestGemini(
+  input: FactCheckInput,
+  model: string,
+  logAttempt?: AttemptLogger,
+  retryInstruction = "",
+): Promise<unknown> {
+  for (let attempt = 1; attempt <= MAX_HTTP_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await requestGeminiOnce(input, model, retryInstruction);
+      logAttempt?.({ model, attempt, status: 200 });
+      return response;
+    } catch (error) {
+      if (!(error instanceof GeminiRequestError)) throw error;
+      const retryable =
+        (error.status === 429 || error.status === 503) &&
+        error.responseText !== "Missing GEMINI_API_KEY";
+      const retryDelayMs = retryable && attempt < MAX_HTTP_ATTEMPTS
+        ? 400 * 2 ** (attempt - 1)
+        : undefined;
+      logAttempt?.({ model, attempt, status: error.status, errorText: error.responseText, retryDelayMs });
+      if (retryDelayMs === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  throw new Error("Gemini attempt limit exhausted");
 }
 
 function isSearchUnavailableError(error: GeminiRequestError): boolean {
@@ -504,8 +541,8 @@ export function validateInlineImage(input: FactCheckInput): string | null {
   return null;
 }
 
-export async function checkWithGemini(input: FactCheckInput): Promise<CheckResult> {
-  let apiResponse = await requestGemini(input);
+async function checkWithModel(input: FactCheckInput, model: string, logAttempt?: AttemptLogger): Promise<CheckResult> {
+  let apiResponse = await requestGemini(input, model, logAttempt);
   let modelData: Record<string, unknown>;
 
   const candidate = getCandidate(apiResponse);
@@ -515,6 +552,8 @@ export async function checkWithGemini(input: FactCheckInput): Promise<CheckResul
   } catch {
     apiResponse = await requestGemini(
       input,
+      model,
+      logAttempt,
       "\n\nRetry requirement: your previous response could not be parsed as JSON. Return the exact requested JSON object only, with no extra text or markdown.",
     );
     const retryCandidate = getCandidate(apiResponse);
@@ -534,5 +573,25 @@ export async function checkWithGemini(input: FactCheckInput): Promise<CheckResul
       "No supported sources in groundingMetadata",
     );
   }
-  return buildResult(modelData, grounding);
+  const result = buildResult(modelData, grounding);
+  logAttempt?.({ model, attempt: 0, status: 200, grounded: true });
+  return result;
+}
+
+export async function checkWithGemini(input: FactCheckInput, logAttempt?: AttemptLogger): Promise<CheckResult> {
+  for (let index = 0; index < MODELS.length; index += 1) {
+    const model = MODELS[index]!;
+    try {
+      return await checkWithModel(input, model, logAttempt);
+    } catch (error) {
+      const canTryNextModel =
+        error instanceof LiveSearchUnavailableError ||
+        (error instanceof GeminiRequestError &&
+          error.responseText !== "Missing GEMINI_API_KEY" &&
+          !isInvalidKeyError(error) &&
+          (error.status === 429 || error.status === 503 || error.status === 404 || isSearchUnavailableError(error)));
+      if (!canTryNextModel || index === MODELS.length - 1) throw error;
+    }
+  }
+  throw new Error("No Gemini model available");
 }
