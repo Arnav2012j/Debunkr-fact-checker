@@ -1,0 +1,1 @@
+- [Gemini model access](gemini-model-access.md) — grounding capability in documentation does not guarantee that this API project can access a model.

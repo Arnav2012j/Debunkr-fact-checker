@@ -1,7 +1,7 @@
 import { CheckClaimResponse } from "@workspace/api-zod";
 
-const MODELS = ["gemini-3.8-flash", "gemini-3.6-flash"] as const;
-const MAX_HTTP_ATTEMPTS = 3;
+const MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"] as const;
+const MAX_HTTP_ATTEMPTS = 2;
 export interface GeminiAttemptEvent {
   model: string;
   attempt: number;
@@ -47,7 +47,7 @@ export class GeminiRequestError extends Error {
 
 export class UnreadableGeminiResponseError extends Error {
   constructor(readonly responseText: string) {
-    super("Gemini returned an unreadable response after one retry");
+    super("Gemini returned an unreadable response");
     this.name = "UnreadableGeminiResponseError";
   }
 }
@@ -387,10 +387,10 @@ async function requestGemini(
     } catch (error) {
       if (!(error instanceof GeminiRequestError)) throw error;
       const retryable =
-        (error.status === 429 || error.status === 503) &&
+        error.status === 503 &&
         error.responseText !== "Missing GEMINI_API_KEY";
       const retryDelayMs = retryable && attempt < MAX_HTTP_ATTEMPTS
-        ? 400 * 2 ** (attempt - 1)
+        ? 1000
         : undefined;
       logAttempt?.({ model, attempt, status: error.status, errorText: error.responseText, retryDelayMs });
       if (retryDelayMs === undefined) throw error;
@@ -542,7 +542,7 @@ export function validateInlineImage(input: FactCheckInput): string | null {
 }
 
 async function checkWithModel(input: FactCheckInput, model: string, logAttempt?: AttemptLogger): Promise<CheckResult> {
-  let apiResponse = await requestGemini(input, model, logAttempt);
+  const apiResponse = await requestGemini(input, model, logAttempt);
   let modelData: Record<string, unknown>;
 
   const candidate = getCandidate(apiResponse);
@@ -550,18 +550,7 @@ async function checkWithModel(input: FactCheckInput, model: string, logAttempt?:
   try {
     modelData = parseModelJson(text);
   } catch {
-    apiResponse = await requestGemini(
-      input,
-      model,
-      logAttempt,
-      "\n\nRetry requirement: your previous response could not be parsed as JSON. Return the exact requested JSON object only, with no extra text or markdown.",
-    );
-    const retryCandidate = getCandidate(apiResponse);
-    try {
-      modelData = parseModelJson(candidateText(retryCandidate));
-    } catch {
-      throw new UnreadableGeminiResponseError(candidateText(retryCandidate));
-    }
+    throw new UnreadableGeminiResponseError(text);
   }
 
   const finalCandidate = getCandidate(apiResponse);

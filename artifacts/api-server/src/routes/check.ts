@@ -9,6 +9,7 @@ import {
   validateInlineImage,
   type FactCheckInput,
 } from "../lib/geminiFactCheck";
+import { findCachedCheck, getOrGenerateCheck } from "../lib/factCheckCache";
 
 const router: IRouter = Router();
 const RATE_LIMIT = 8;
@@ -53,15 +54,6 @@ function containsOnlyHttpUrls(value: string): boolean {
 }
 
 router.post("/check", async (req, res): Promise<void> => {
-  const ip = req.ip || req.socket.remoteAddress || "unknown";
-  if (!checkRateLimit(ip, Date.now())) {
-    res.status(429).json({
-      error: "Too many checks. Please wait a minute and try again.",
-      code: "RATE_LIMIT_REACHED",
-    });
-    return;
-  }
-
   const parsed = CheckClaimBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -96,15 +88,39 @@ router.post("/check", async (req, res): Promise<void> => {
   }
 
   try {
-    const result = await checkWithGemini({ ...input, claim }, (event) => {
-      const details = {
-        ...event,
-        ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
-      };
-      if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
-      else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
+    const normalizedInput = { ...input, claim };
+    const cached = await findCachedCheck(normalizedInput);
+    if (cached) {
+      res.setHeader("X-Debunkr-Cache", "HIT");
+      res.setHeader("X-Debunkr-Model", cached.model);
+      res.json(cached.result);
+      return;
+    }
+    const ip = req.ip || req.socket.remoteAddress || "unknown";
+    if (!checkRateLimit(ip, Date.now())) {
+      res.status(429).json({
+        error: "Too many checks. Please wait a minute and try again.",
+        code: "RATE_LIMIT_REACHED",
+      });
+      return;
+    }
+    const stored = await getOrGenerateCheck(normalizedInput, async () => {
+      let model = "";
+      const result = await checkWithGemini(normalizedInput, (event) => {
+        if (event.grounded) model = event.model;
+        res.setHeader("X-Debunkr-Model", event.model);
+        const details = {
+          ...event,
+          ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
+        };
+        if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
+        else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
+      });
+      return { result, model };
     });
-    res.json(result);
+    res.setHeader("X-Debunkr-Cache", input.imageBase64 ? "BYPASS" : "MISS");
+    res.setHeader("X-Debunkr-Model", stored.model);
+    res.json(stored.result);
   } catch (error) {
     if (error instanceof LiveSearchUnavailableError) {
       req.log.error(
@@ -127,6 +143,13 @@ router.post("/check", async (req, res): Promise<void> => {
         });
         return;
       }
+      if (error.status === 429) {
+        res.status(429).json({
+          error: "Daily free limit reached. Please try again later.",
+          code: "GEMINI_RATE_LIMITED",
+        });
+        return;
+      }
       if (
         error.status === 401 ||
         error.status === 403 ||
@@ -146,13 +169,6 @@ router.post("/check", async (req, res): Promise<void> => {
         )
       ) {
         res.json(liveSearchUnavailableResult({ ...input, claim }));
-        return;
-      }
-      if (error.status === 429) {
-        res.status(503).json({
-          error: "Gemini is temporarily rate-limiting checks. Please try again shortly.",
-          code: "GEMINI_RATE_LIMITED",
-        });
         return;
       }
       res.status(502).json({
