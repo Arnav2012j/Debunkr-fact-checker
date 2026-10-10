@@ -16,6 +16,21 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      (function () {
+        var d = document.documentElement, s = {};
+        try { s = JSON.parse(localStorage.getItem('debunkr.settings.v1') || '{}') || {}; } catch (e) { s = {}; }
+        var mm = function (q) { try { return window.matchMedia(q).matches; } catch (e) { return false; } };
+        var theme = s.theme === 'light' || s.theme === 'dark' ? s.theme : (mm('(prefers-color-scheme: dark)') ? 'dark' : 'light');
+        d.setAttribute('data-theme', theme); if (theme === 'dark') d.classList.add('dark'); d.style.colorScheme = theme;
+        d.setAttribute('data-text-size', ['small', 'medium', 'large'].indexOf(s.textSize) >= 0 ? s.textSize : 'medium');
+        var rm = s.reduceMotion === 'on' ? true : s.reduceMotion === 'off' ? false : mm('(prefers-reduced-motion: reduce)');
+        d.setAttribute('data-motion', rm ? 'reduce' : 'full');
+        var codes = { English: 'en', Hindi: 'hi', Spanish: 'es', French: 'fr' }, lang = codes[s.language];
+        if (!lang) { var nl = (navigator.languages && navigator.languages[0]) || navigator.language || 'en'; lang = ['en', 'hi', 'es', 'fr'].indexOf(nl.slice(0, 2).toLowerCase()) >= 0 ? nl.slice(0, 2).toLowerCase() : 'en'; }
+        d.setAttribute('lang', lang);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

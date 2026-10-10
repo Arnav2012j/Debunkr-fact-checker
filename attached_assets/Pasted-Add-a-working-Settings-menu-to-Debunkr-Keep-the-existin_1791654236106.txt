@@ -1,0 +1,27 @@
+Add a working Settings menu to Debunkr. Keep the existing design, colors, fonts and animations. Don't change anything else, and don't add new libraries.
+
+ENTRY POINT
+- A gear icon button in the nav (desktop and mobile). It opens a settings panel: a popover on desktop and a bottom sheet on mobile, with a smooth slide and fade. Close with the X button, the Escape key, or tapping outside. Make it keyboard accessible with focus trapping and aria labels.
+
+SETTINGS (each must actually change the app, not just display)
+1. Theme: Light | Dark | System. Applies instantly across all pages using CSS variables and a data-theme attribute on the root element. System follows the device setting and updates live. Verdict mood themes (TRUE bright, FALSE dark red, UNCLEAR amber) still override the base theme on the results page only.
+2. Language: English | हिन्दी | Español | Français. Switches ALL fixed UI text instantly (nav, buttons, headings, placeholders, example chips, how-it-works, footer, error messages, settings labels) using a single translations file. Default to the browser language if supported, otherwise English. Also send the selected language to /api/check so AI-written explanations use it. Show a small note on results: "Language changes apply to your next check." Changing language must never trigger a new API call.
+3. Explanation style: Standard | Like I'm 12 | For my grandparent. Sets the default for the toggle on results.
+4. Text size: Small | Medium | Large. Scales the root font size.
+5. Reduce motion: On | Off | System. When on, replace the hero scan, stamp slam, shake, confetti and slide animations with simple fades or static versions.
+6. Hero animation: show or hide the home X-ray scan card.
+7. Reset to defaults button, with a short confirmation.
+
+BEHAVIOR
+- Save all settings in localStorage under one key, wrapped in try/catch. If storage is unavailable, still work for the current session.
+- Apply saved theme, text size and language before first paint so there is no flash of the wrong theme.
+- Keep the language selector in the nav and in Settings in sync, or keep just one, in Settings.
+- Make sure every screen, including the share card, is readable in both themes (contrast at least 4.5:1). The share card image always uses the verdict mood colors regardless of theme.
+- Mobile responsive. Tap targets at least 44px.
+- Never call Gemini or Tavily when a setting changes.
+
+TEST BEFORE FINISHING (no API calls needed)
+- Switch to Dark, refresh, and confirm it stays dark.
+- Switch to Hindi, then Spanish, and confirm that the home page, results page and error messages are translated.
+- Turn on Reduce motion and confirm the hero animation is replaced.
+Report what works and anything you skipped. Don't re-run any fact checks.
