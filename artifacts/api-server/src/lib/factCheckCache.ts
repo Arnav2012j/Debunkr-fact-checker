@@ -20,7 +20,7 @@ function claimKey(input: FactCheckInput): string | null {
   // An image can change the meaning of identical accompanying text.
   if (input.imageBase64 || !input.claim?.trim()) return null;
   const normalized = input.claim.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
-  return createHash("sha256").update(JSON.stringify([normalized, input.language])).digest("hex");
+  return createHash("sha256").update(JSON.stringify(["tavily-v1", normalized, input.language])).digest("hex");
 }
 
 function loadCache(): Promise<void> {
@@ -41,11 +41,11 @@ function loadCache(): Promise<void> {
     for (const [key, value] of Object.entries(data.entries)) {
       const stored = value as StoredCheck;
       const result = CheckClaimResponse.parse(stored.result);
-      if (!["gemini-2.5-flash", "gemini-2.5-flash-lite"].includes(stored.model) ||
+      if (typeof stored.model !== "string" || !stored.model.startsWith("gemini-") ||
           !result.claims.some((claim) => claim.sources.length > 0)) {
         throw new Error("Invalid grounded fact-check cache entry");
       }
-      entries.set(key, { result, model: stored.model });
+      if (result.overall_verdict !== "UNCLEAR") entries.set(key, { result, model: stored.model });
     }
   })();
   return loading;
@@ -88,7 +88,8 @@ export async function getOrGenerateCheck(
   const operation = (async () => {
     const check = await generate();
     // Never persist errors, ungrounded responses, or the search-unavailable fallback.
-    if (check.result.claims.some((claim) => claim.sources.length > 0)) {
+    if (check.result.overall_verdict !== "UNCLEAR" &&
+        check.result.claims.some((claim) => claim.sources.length > 0)) {
       await storeCheck(key, check);
     }
     return check;

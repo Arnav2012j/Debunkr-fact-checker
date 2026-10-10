@@ -33,8 +33,10 @@ function checkRateLimit(ip: string, now: number): boolean {
 }
 
 function redactApiKey(value: string): string {
-  const apiKey = process.env.GEMINI_API_KEY;
-  return apiKey ? value.replaceAll(apiKey, "[redacted]") : value;
+  for (const key of [process.env.GEMINI_API_KEY, process.env.TAVILY_API_KEY]) {
+    if (key) value = value.replaceAll(key, "[redacted]");
+  }
+  return value;
 }
 
 function containsOnlyHttpUrls(value: string): boolean {
@@ -108,12 +110,14 @@ router.post("/check", async (req, res): Promise<void> => {
       let model = "";
       const result = await checkWithGemini(normalizedInput, (event) => {
         if (event.grounded) model = event.model;
-        res.setHeader("X-Debunkr-Model", event.model);
+        if (event.model) res.setHeader("X-Debunkr-Model", event.model);
+        if (event.tavilyResults !== undefined) res.setHeader("X-Debunkr-Search-Results", event.tavilyResults);
         const details = {
           ...event,
           ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
         };
-        if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
+        if (event.tavilyResults !== undefined) req.log.info(details, "Tavily search completed");
+        else if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
         else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
       });
       return { result, model };
@@ -161,14 +165,6 @@ router.post("/check", async (req, res): Promise<void> => {
           error: "The fact-check service could not authenticate with Gemini.",
           code: "INVALID_KEY",
         });
-        return;
-      }
-      if (
-        /google_search|grounding|search (?:tool|is not available|unavailable)|not supported|unsupported/i.test(
-          error.responseText,
-        )
-      ) {
-        res.json(liveSearchUnavailableResult({ ...input, claim }));
         return;
       }
       res.status(502).json({
