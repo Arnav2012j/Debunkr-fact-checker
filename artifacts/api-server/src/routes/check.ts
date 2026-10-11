@@ -101,7 +101,7 @@ router.post("/check", async (req, res): Promise<void> => {
     const ip = req.ip || req.socket.remoteAddress || "unknown";
     if (!checkRateLimit(ip, Date.now())) {
       res.status(429).json({
-        error: "Too many checks. Please wait a minute and try again.",
+        error: "Daily free limit reached. Please try again later.",
         code: "RATE_LIMIT_REACHED",
       });
       return;

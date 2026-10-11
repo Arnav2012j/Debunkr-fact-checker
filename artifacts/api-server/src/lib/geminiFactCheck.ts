@@ -349,12 +349,12 @@ function unavailableText(language: FactCheckInput["language"]): {
   const messages = {
     English: {
       explanation:
-        "Live search is unavailable right now, so this claim could not be checked against current sources.",
-      simple: "Live search is unavailable right now. We do not have enough evidence to check this.",
+        "We couldn't search the web right now. This claim could not be checked against current sources.",
+      simple: "We couldn't search the web right now. We do not have enough evidence to check this.",
       elder:
-        "Live search is unavailable right now. It is like not being able to reach the library today; waiting is safer than guessing.",
+        "We couldn't search the web right now. It is like not being able to reach the library today; waiting is safer than guessing.",
       reply:
-        "Live search is unavailable right now, so I cannot verify this claim. It is better to wait for reliable evidence before sharing.",
+        "We couldn't search the web right now. Please wait for reliable evidence before sharing.",
     },
     Hindi: {
       explanation:
@@ -395,7 +395,7 @@ export function liveSearchUnavailableResult(
   return CheckClaimResponse.parse({
     overall_verdict: "UNCLEAR",
     action: "Wait for more evidence",
-    summary: "Live search is unavailable right now",
+    summary: "We couldn't search the web right now.",
     calm_reply: copy.reply,
     claims: [
       {
