@@ -1,2 +1,3 @@
 - [Gemini model access](gemini-model-access.md) — grounding capability in documentation does not guarantee that this API project can access a model.
 - [Browser speech policy](browser-speech-policy.md) — speech and quick-link conveniences must not regenerate or translate results through extra AI calls.
+- [Theme intent](theme-intent.md) — Dark must stay dark across verdicts; Light FALSE deliberately retains its dramatic dark treatment.

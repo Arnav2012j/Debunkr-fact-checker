@@ -14,7 +14,7 @@ export default function NotFound() {
             <h1 className="text-2xl font-bold text-foreground" data-testid="text-not-found-title">{t('nf.title')}</h1>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">{t('nf.body')}</p>
-          <Link href="/" className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-primary" data-testid="link-not-found-home">{t('nf.home')}</Link>
+          <Link href="/" className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-foreground underline underline-offset-2" data-testid="link-not-found-home">{t('nf.home')}</Link>
         </CardContent>
       </Card>
     </div>

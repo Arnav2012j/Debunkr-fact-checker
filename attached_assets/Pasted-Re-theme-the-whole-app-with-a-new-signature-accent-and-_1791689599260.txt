@@ -1,0 +1,21 @@
+Re-theme the whole app with a new signature accent, and fix the Dark theme flipping to white. Keep layout, fonts, animations, and all features. Do not make any API calls; test only with cached results.
+
+1. REMOVE the indigo/purple brand color everywhere: buttons, links, focus rings, step tracker, scan line, badges, icons, toggles, gradients and glows. No gradients, glow or blurred orbs, glass blur, gradient text, or sparkle icons. Use flat fills and 1px borders only.
+
+2. NEW COLOR TOKENS (CSS variables), signature accent #D8F34A:
+DARK: bg #0D0D0C, surface #161614, raised #1E1E1B, border #2A2A26, text #F4F1EA, muted #A19D93, accent #D8F34A, on-accent #0D0D0C.
+LIGHT: bg #F7F4EC, surface #FFFFFF, border #E2DDD0, text #14130F, muted #6B675D, accent #D8F34A, on-accent #14130F.
+VERDICT COLORS: Dark: true #5BD38A, false #FF5A4F, unclear #F2A93B. Light: true #1F9D5C, false #D6342B, unclear #B7791F.
+In Light, never use the accent as text color (unreadable); links are ink-colored with an underline, and the focus ring is a 2px ink outline.
+
+3. WHERE THE ACCENT IS USED (only here): primary button fill, active nav underline, input focus border (dark), active step in the analysis tracker, the X-ray scan line on Home and Analysis, Settings toggles, and the selected state in segmented controls. Never use it for verdicts.
+
+4. DARK NEVER FLIPS TO LIGHT: when the theme is Dark (or System and the device is dark), every screen stays dark at all times, including the results page. The verdict mood must not change the base background to a light color. In Dark, moods change only tints, borders and effects:
+- TRUE: card #10201A with a green border, green claim highlights, green confetti, and the tilted "Looks legit!" badge.
+- FALSE: card #241211 with a red border, a subtle red vignette on the edges only (center stays #0D0D0C), the FALSE stamp slam, small shake, and pulsing alert icon.
+- UNCLEAR: card #241C0E with an amber border and a calm fade.
+In Light: TRUE and UNCLEAR stay light with soft tints (TRUE #E8F5EC, UNCLEAR #FBF1DC); FALSE keeps its dramatic dark treatment.
+
+5. Apply to: nav, Home hero card, input card, example chips, tracker, results, claim highlights, source cards, agreement bar, tactic badges, Settings panel, toasts, error states, and the footer. The share card keeps its verdict mood colors but uses the new tokens instead of indigo.
+
+6. Check: contrast at least 4.5:1 for text in both themes, visible focus states, and reduced-motion still works. Test Dark and Light with cached TRUE, FALSE and UNCLEAR results, and confirm Dark never turns white. Report what changed.
