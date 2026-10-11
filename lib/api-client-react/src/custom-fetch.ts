@@ -1,5 +1,7 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  /** Optional hook invoked with the raw Response (before body parsing), e.g. to read headers. */
+  onResponse?: (response: Response) => void;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
@@ -327,7 +329,7 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const { responseType = "auto", headers: headersInit, onResponse, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -360,7 +362,18 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const controller = new AbortController();
+  const checkRequest = /\/api\/check(?:[?#]|$)/.test(requestInfo.url);
+  const originalSignal = init.signal ?? (isRequest(input) ? input.signal : undefined);
+  const abort = () => controller.abort(originalSignal?.reason);
+  if (originalSignal?.aborted) abort();
+  else originalSignal?.addEventListener("abort", abort, { once: true });
+  const timer = checkRequest ? setTimeout(() => controller.abort(new DOMException("Check timed out", "TimeoutError")), 60_000) : undefined;
+  try {
+  const response = await fetch(input, { ...init, method, headers, signal: checkRequest ? controller.signal : originalSignal });
+  if (onResponse) {
+    try { onResponse(response); } catch { /* observer errors must not break the request */ }
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
@@ -368,4 +381,8 @@ export async function customFetch<T = unknown>(
   }
 
   return (await parseSuccessBody(response, responseType, requestInfo)) as T;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    originalSignal?.removeEventListener("abort", abort);
+  }
 }

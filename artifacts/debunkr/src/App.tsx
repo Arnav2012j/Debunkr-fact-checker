@@ -21,7 +21,8 @@ import { useSpeechInput } from '@/features/use-speech-input';
 import { stopSpeech } from '@/features/speech-synth';
 import { readQuickParams, takeAutoRun } from '@/features/quick-link';
 import '@/features/features.css';
-import { useCheckClaim } from '@workspace/api-client-react';
+import { getEstimateSec, isDevMock, readCacheHeader, recordDurationMs, type CacheState } from '@/features/check-timing';
+import { checkClaim, useCheckClaim } from '@workspace/api-client-react';
 import type { CheckInput, CheckResult, CheckedClaim } from '@workspace/api-client-react';
 
 const queryClient = new QueryClient();
@@ -167,9 +168,58 @@ function HomeView({ onSubmit, pending, initialClaim }: { onSubmit: (claim: strin
   );
 }
 
-function AnalysisView({ claim, step, error, pending, onRetry, onReset }: { claim: string; step: number; error: UiError; pending: boolean; onRetry: () => void; onReset: () => void }) {
+type Attempt = { id: number; start: number; estimate: number; cache: CacheState };
+
+function useElapsedSec(start: number, running: boolean) {
+  const [elapsed, setElapsed] = useState(() => Math.floor((performance.now() - start) / 1000));
+  useEffect(() => {
+    setElapsed(Math.floor((performance.now() - start) / 1000));
+    if (!running) return;
+    const id = window.setInterval(() => setElapsed(Math.floor((performance.now() - start) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [start, running]);
+  return elapsed;
+}
+
+function stepFor(elapsed: number, estimate: number) {
+  const r = elapsed / estimate;
+  return r >= .8 ? 3 : r >= .4 ? 2 : r >= .1 ? 1 : 0;
+}
+
+function WaitTimer({ elapsed, attempt, onAnnounce }: { elapsed: number; attempt: Attempt; onAnnounce: (key: TKey, n?: number) => void }) {
   const t = useT();
   const reduceMotion = useMotionOff();
+  const { estimate, id } = attempt;
+  const announceRef = useRef(onAnnounce); announceRef.current = onAnnounce;
+  const spoken = useRef<{ id: number; start: boolean; half: boolean }>({ id: -1, start: false, half: false });
+  const visible = elapsed >= 1;
+  useEffect(() => {
+    if (spoken.current.id !== id) spoken.current = { id, start: false, half: false };
+    if (!visible) return;
+    if (!spoken.current.start) { spoken.current.start = true; announceRef.current('wait.srStart', estimate); }
+    else if (!spoken.current.half && elapsed >= estimate / 2) { spoken.current.half = true; announceRef.current('wait.srHalf'); }
+  }, [visible, elapsed, estimate, id]);
+  if (!visible) return <div className="wait-timer wait-timer-pending" aria-hidden="true" />;
+  const over = elapsed >= estimate;
+  const remaining = Math.max(1, estimate - elapsed);
+  const pct = Math.round(Math.min(.95, elapsed / estimate) * 100);
+  return <div className="wait-timer" data-testid="status-wait-timer">
+    <div className="wait-line" data-testid="text-wait-estimate">{over ? t('wait.longer', { n: elapsed }) : t('wait.estimate', { n: remaining })}</div>
+    <div className="wait-elapsed" data-testid="text-wait-elapsed">{t('wait.elapsed', { n: elapsed })}</div>
+    {reduceMotion
+      ? <div className="wait-pct" data-testid="text-wait-progress">{t('wait.progress', { n: pct })}</div>
+      : <div className="wait-track" role="progressbar" aria-label={t('wait.progressAria')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="wait-fill" style={{ transform: `scaleX(${pct / 100})` }} /></div>}
+    {elapsed >= 30 && <p className="wait-slow" data-testid="text-wait-slow">{t('wait.slow')}</p>}
+  </div>;
+}
+
+function AnalysisView({ claim, attempt, error, pending, onRetry, onReset, onAnnounce }: { claim: string; attempt: Attempt; error: UiError; pending: boolean; onRetry: () => void; onReset: () => void; onAnnounce: (key: TKey, n?: number) => void }) {
+  const t = useT();
+  const reduceMotion = useMotionOff();
+  const hit = attempt.cache === 'HIT';
+  const running = pending && !error && !hit;
+  const elapsed = useElapsedSec(attempt.start, running);
+  const step = hit ? 3 : stepFor(elapsed, attempt.estimate);
   const steps = [t('an.s1'), t('an.s2'), t('an.s3'), t('an.s4')];
   return (
     <main className="main analysis">
@@ -180,7 +230,9 @@ function AnalysisView({ claim, step, error, pending, onRetry, onReset }: { claim
         {!reduceMotion && <motion.div className="analysis-scan" animate={{ y: [0, 96, 0], opacity: [0, 1, 0] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }} />}
         {claim || t('an.screenshot')}
       </motion.div>
+      {hit && <div className="instant-note" data-testid="text-instant-analysis">{t('wait.instant')}</div>}
       <div className="steps" data-testid="tracker-analysis-steps">{steps.map((label, i) => <div className={`step ${i < step ? 'done' : i === step ? 'current' : ''}`} key={label}><span className="step-dot">{i < step ? <Check size={14} /> : i === step ? <LoaderCircle size={14} /> : i + 1}</span>{label}</div>)}</div>
+      {running && <WaitTimer elapsed={elapsed} attempt={attempt} onAnnounce={onAnnounce} />}
       {!error && <><motion.div className="skeleton-card" animate={reduceMotion ? { opacity: .8 } : { opacity: [.56, .95, .56] }} transition={{ duration: 1.5, repeat: reduceMotion ? 0 : Infinity }} aria-label={t('an.loading')} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}><motion.div className="skeleton-card" style={{ height: 96 }} animate={reduceMotion ? { opacity: .8 } : { opacity: [.6, .9, .6] }} transition={{ duration: 1.5, repeat: reduceMotion ? 0 : Infinity, delay: .2 }} /><motion.div className="skeleton-card" style={{ height: 96 }} animate={reduceMotion ? { opacity: .8 } : { opacity: [.6, .9, .6] }} transition={{ duration: 1.5, repeat: reduceMotion ? 0 : Infinity, delay: .4 }} /></div></>}
       {error && <div className="error-card" role="alert" data-testid="status-check-error"><div><strong>{t('an.errTitle')}</strong><br />{t(error.key)}</div><div style={{ display: 'flex', gap: 8 }}><button className="secondary-btn" onClick={onReset} data-testid="button-cancel-error">{t('an.back')}</button><button className="primary-btn" onClick={onRetry} disabled={pending} data-testid="button-retry-check"><RotateCcw size={14} />{t('an.retry')}</button></div></div>}
@@ -287,7 +339,7 @@ function ShareModal({ result, claim, selected, onClose }: { result: CheckResult;
   </motion.div>;
 }
 
-function ResultsView({ result, inputClaim, quickClaim, resultLang, onReset }: { result: CheckResult; inputClaim: string; quickClaim: string; resultLang: Lang; onReset: () => void }) {
+function ResultsView({ result, inputClaim, quickClaim, resultLang, timing, onReset }: { result: CheckResult; inputClaim: string; quickClaim: string; resultLang: Lang; timing: { cache: CacheState; sec: number } | null; onReset: () => void }) {
   const { t, settings } = useSettings();
   const reduceMotion = useMotionOff();
   const [selected, setSelectedRaw] = useState(0);
@@ -331,6 +383,7 @@ function ResultsView({ result, inputClaim, quickClaim, resultLang, onReset }: { 
   return <main className={`main results mood-${mood}`} data-testid="content-results">
     <div className="results-head"><div><div className="eyebrow"><span className="eyebrow-dot" />{t('res.complete')}</div><h1>{result.overall_verdict === 'TRUE' ? t('res.headTrue') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</h1></div><button className="share-btn" onClick={() => setShareOpen(true)} data-testid="button-open-share"><Share2 size={14} />{t('res.share')}</button></div>
     <p className="next-note" data-testid="text-next-check-note">{t('res.nextNote')}</p>
+    {timing && <p className="time-note" data-testid="text-check-time">{timing.cache === 'HIT' ? t('wait.instant') : t('wait.took', { n: timing.sec })}</p>}
     <motion.div className={`verdict-hero ${mood}`} initial={{ opacity: 0, y: 12 }} animate={mood === 'false' && !reduceMotion ? { opacity: 1, y: [0, 3, -2, 0] } : { opacity: 1, y: 0 }} transition={{ duration: mood === 'false' ? .36 : .3 }} data-testid="status-overall-verdict">
       <div><div className="verdict-label"><VerdictIcon verdict={result.overall_verdict} size={21} />{result.overall_verdict === 'TRUE' ? t('res.legit') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</div><p>{result.summary || t('res.summaryFallback')}</p></div><div className="verdict-tools"><div className="action-line">{result.action || t('res.actionFallback')}</div><SpeakButton id="overall" text={overallSpeech} lang={resultLang} ariaKey="read.overallAria" testId="button-read-overall" /></div>
       {result.overall_verdict === 'FALSE' && <motion.div className="verdict-stamp" initial={reduceMotion ? { scale: 1, rotate: -8, opacity: 0 } : { scale: .45, rotate: -15, opacity: 0 }} animate={{ scale: 1, rotate: -8, opacity: .28 }} transition={{ type: 'spring', stiffness: 310, damping: 14, delay: .16 }}>{t('verdict.FALSE')}</motion.div>}
@@ -359,21 +412,50 @@ function Experience() {
   const [result, setResult] = useState<CheckResult | null>(null);
   const [submittedClaim, setSubmittedClaim] = useState('');
   const [error, setError] = useState<UiError>(null);
-  const [analysisStep, setAnalysisStep] = useState(0);
   const { settings, update, t } = useSettings();
   const language = settings.language;
   const [quick] = useState(readQuickParams);
   const [prefill, setPrefill] = useState(quick.claim);
   const [resultLang, setResultLang] = useState<Lang>(language);
-  const mutation = useCheckClaim();
+  const [attempt, setAttempt] = useState<Attempt>(() => ({ id: 0, start: performance.now(), estimate: getEstimateSec(), cache: 'unknown' }));
+  const [timing, setTiming] = useState<{ cache: CacheState; sec: number } | null>(null);
+  const [announce, setAnnounce] = useState('');
+  const attemptRef = useRef({ id: 0, start: 0, cache: 'unknown' as CacheState, mock: false });
+  // Request-scoped: each outgoing input object is tagged with its attempt ID (in memory only).
+  const attemptOf = useRef(new WeakMap<CheckInput, number>());
+  const headerForAttempt = (response: Response, id: number) => {
+    const a = attemptRef.current;
+    if (a.id !== id) return; // stale response after reset / newer submit
+    a.cache = readCacheHeader(response);
+    a.mock = isDevMock(response);
+    const cache = a.cache;
+    if (cache === 'HIT') setAttempt((cur) => (cur.id === id ? { ...cur, cache } : cur));
+  };
+  const headerRef = useRef(headerForAttempt); headerRef.current = headerForAttempt;
+  const mutation = useCheckClaim({ mutation: { mutationFn: ({ data }) => {
+    const capturedId = attemptOf.current.get(data) ?? -1;
+    return checkClaim(data, { onResponse: (response) => headerRef.current(response, capturedId) });
+  } } });
   const lastInput = useRef<CheckInput | null>(null);
-  const stepsTimer = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (!mutation.isPending) return;
-    setAnalysisStep(0);
-    stepsTimer.current = window.setInterval(() => setAnalysisStep((s) => Math.min(3, s + 1)), 1350);
-    return () => window.clearInterval(stepsTimer.current);
-  }, [mutation.isPending]);
+  const announceKey = (key: TKey, n?: number) => setAnnounce(t(key, n === undefined ? undefined : { n }));
+  const beginAttempt = () => {
+    const id = attemptRef.current.id + 1;
+    const start = performance.now();
+    attemptRef.current = { id, start, cache: 'unknown', mock: false };
+    setAttempt({ id, start, estimate: getEstimateSec(), cache: 'unknown' });
+    setTiming(null);
+    setAnnounce('');
+    return id;
+  };
+  const finish = (id: number, data: CheckResult) => {
+    const a = attemptRef.current;
+    if (a.id !== id) return;
+    const ms = performance.now() - a.start;
+    if ((a.cache === 'MISS' || a.cache === 'BYPASS') && !a.mock) recordDurationMs(ms);
+    setTiming({ cache: a.cache, sec: Math.max(1, Math.round(ms / 1000)) });
+    setAnnounce(t('wait.srDone'));
+    setResult(data); setView('results');
+  };
   const submitInput = (claim: string, image?: { base64: string; mime: CheckInput['imageMime']; name: string }, langOverride?: Lang) => {
     const requestLang = langOverride ?? language;
     const cleaned = claim.trim();
@@ -392,9 +474,11 @@ function Experience() {
     const input: CheckInput = { language: requestLang, ...(cleaned ? { claim: cleaned } : {}), ...(image ? { imageBase64: image.base64, imageMime: image.mime } : {}) };
     lastInput.current = input;
     setView('analysis');
+    const id = beginAttempt();
+    attemptOf.current.set(input, id);
     mutation.mutate({ data: input }, {
-      onSuccess: (data) => { setResult(data); setAnalysisStep(4); setView('results'); },
-      onError: (err) => { setError(toUiError(err)); setView('analysis'); },
+      onSuccess: (data) => finish(id, data),
+      onError: (err) => { if (attemptRef.current.id !== id) return; setError(toUiError(err)); setView('analysis'); },
     });
   };
   const submitRef = useRef(submitInput); submitRef.current = submitInput;
@@ -408,18 +492,22 @@ function Experience() {
     setResultLang(lastInput.current.language as Lang);
     setError(null);
     setView('analysis');
-    mutation.mutate({ data: lastInput.current }, {
-      onSuccess: (data) => { setResult(data); setView('results'); },
-      onError: (err) => setError(toUiError(err)),
+    const id = beginAttempt();
+    const retryInput: CheckInput = { ...lastInput.current };
+    attemptOf.current.set(retryInput, id);
+    mutation.mutate({ data: retryInput }, {
+      onSuccess: (data) => finish(id, data),
+      onError: (err) => { if (attemptRef.current.id === id) setError(toUiError(err)); },
     });
   };
-  const reset = () => { stopSpeech(); setView('home'); setError(null); setResult(null); setSubmittedClaim(''); mutation.reset(); };
+  const reset = () => { attemptRef.current = { ...attemptRef.current, id: attemptRef.current.id + 1 }; setTiming(null); setAnnounce(''); stopSpeech(); setView('home'); setError(null); setResult(null); setSubmittedClaim(''); mutation.reset(); };
   const mood = view === 'results' && result ? verdictClass(result.overall_verdict) : undefined;
   return <div className="shell" data-mood={mood}>
     <header className="topbar"><button onClick={reset} style={{ border: 0, background: 'transparent', padding: 0, minHeight: 44 }} aria-label={t('nav.home')} data-testid="button-logo-home"><Logo /></button><div className="nav-right"><button className="nav-link" onClick={reset} data-testid="link-fact-check">{t('nav.factCheck')}</button><label style={{ display: 'flex', alignItems: 'center', gap: 7 }}><span className="sr-only">{t('nav.language')}</span><select className="language" value={language} onChange={(e) => update('language', e.target.value as Lang)} aria-label={t('nav.language')} data-testid="select-language">{LANGS.map((value) => <option key={value} value={value}>{LANGUAGE_NAMES[value]}</option>)}</select></label><SettingsButton /></div></header>
     {view === 'home' && <HomeView onSubmit={submitInput} pending={mutation.isPending} initialClaim={prefill} />}
-    {view === 'analysis' && <AnalysisView claim={submittedClaim} step={analysisStep} error={error} pending={mutation.isPending} onRetry={retry} onReset={reset} />}
-    {view === 'results' && result && <ResultsView result={result} inputClaim={submittedClaim} quickClaim={lastInput.current?.claim || result.claims?.[0]?.text || ''} resultLang={resultLang} onReset={reset} />}
+    {view === 'analysis' && <AnalysisView claim={submittedClaim} attempt={attempt} error={error} pending={mutation.isPending} onRetry={retry} onReset={reset} onAnnounce={announceKey} />}
+    {view === 'results' && result && <ResultsView result={result} inputClaim={submittedClaim} quickClaim={lastInput.current?.claim || result.claims?.[0]?.text || ''} resultLang={resultLang} timing={timing} onReset={reset} />}
+    <div className="sr-only" aria-live="polite" aria-atomic="true" data-testid="status-wait-announcer">{announce}</div>
   </div>;
 }
 
