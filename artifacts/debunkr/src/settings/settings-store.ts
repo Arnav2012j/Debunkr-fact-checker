@@ -3,6 +3,8 @@ export type MotionPref = 'on' | 'off' | 'system';
 export type TextSize = 'small' | 'medium' | 'large';
 export type Lang = 'English' | 'Hindi' | 'Spanish' | 'French';
 export type Tone = 0 | 1 | 2;
+export type ReadSpeed = 'slow' | 'normal' | 'fast';
+export const READ_RATE: Record<ReadSpeed, number> = { slow: 0.8, normal: 1, fast: 1.25 };
 
 export interface Settings {
   theme: ThemePref;
@@ -11,6 +13,7 @@ export interface Settings {
   textSize: TextSize;
   reduceMotion: MotionPref;
   showHero: boolean;
+  readSpeed: ReadSpeed;
 }
 
 export const STORAGE_KEY = 'debunkr.settings.v1';
@@ -27,7 +30,7 @@ export function browserLanguage(): Lang {
 }
 
 export function defaultSettings(): Settings {
-  return { theme: 'system', language: browserLanguage(), explanation: 0, textSize: 'medium', reduceMotion: 'system', showHero: true };
+  return { theme: 'system', language: browserLanguage(), explanation: 0, textSize: 'medium', reduceMotion: 'system', showHero: true, readSpeed: 'normal' };
 }
 
 const pick = <T,>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
@@ -37,7 +40,9 @@ export function loadSettings(): Settings {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return d;
-    const p = JSON.parse(raw) as Partial<Settings>;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return d;
+    const p = parsed as Partial<Settings>;
     return {
       theme: pick(p.theme, ['light', 'dark', 'system'] as const, d.theme),
       language: pick(p.language, LANGS, d.language),
@@ -45,6 +50,7 @@ export function loadSettings(): Settings {
       textSize: pick(p.textSize, ['small', 'medium', 'large'] as const, d.textSize),
       reduceMotion: pick(p.reduceMotion, ['on', 'off', 'system'] as const, d.reduceMotion),
       showHero: typeof p.showHero === 'boolean' ? p.showHero : d.showHero,
+      readSpeed: pick(p.readSpeed, ['slow', 'normal', 'fast'] as const, d.readSpeed),
     };
   } catch { return d; }
 }

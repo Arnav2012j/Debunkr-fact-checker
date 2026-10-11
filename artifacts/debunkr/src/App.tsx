@@ -15,7 +15,12 @@ import {
 import { SettingsProvider, useMotionOff, useSettings, useT } from '@/settings/SettingsContext';
 import { SettingsButton } from '@/settings/SettingsPanel';
 import { LANGS, type Lang, type Tone } from '@/settings/settings-store';
-import { LANGUAGE_NAMES, type TKey } from '@/settings/translations';
+import { LANGUAGE_NAMES, translate, type TKey } from '@/settings/translations';
+import { CheckAnywhere, CopyQuickLinkButton, MicButton, SpeakButton } from '@/features/FeatureUI';
+import { useSpeechInput } from '@/features/use-speech-input';
+import { stopSpeech } from '@/features/speech-synth';
+import { readQuickParams, takeAutoRun } from '@/features/quick-link';
+import '@/features/features.css';
 import { useCheckClaim } from '@workspace/api-client-react';
 import type { CheckInput, CheckResult, CheckedClaim } from '@workspace/api-client-react';
 
@@ -71,11 +76,15 @@ function XrayCard() {
   );
 }
 
-function HomeView({ onSubmit, pending }: { onSubmit: (claim: string, image?: { base64: string; mime: CheckInput['imageMime']; name: string }) => void; pending: boolean }) {
+function HomeView({ onSubmit, pending, initialClaim }: { onSubmit: (claim: string, image?: { base64: string; mime: CheckInput['imageMime']; name: string }) => void; pending: boolean; initialClaim: string }) {
   const reduceMotion = useMotionOff();
   const { t, settings } = useSettings();
   const [tab, setTab] = useState<'claim' | 'image'>('claim');
-  const [claim, setClaim] = useState('');
+  const [claim, setClaim] = useState(initialClaim);
+  const claimRef = useRef(claim); claimRef.current = claim;
+  const voice = useSpeechInput(settings.language, setClaim, () => claimRef.current);
+  const stopVoice = voice.stop;
+  useEffect(() => { if (tab !== 'claim') stopVoice(); }, [tab, stopVoice]);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [image, setImage] = useState<{ base64: string; mime: CheckInput['imageMime']; name: string; url: string } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -111,7 +120,7 @@ function HomeView({ onSubmit, pending }: { onSubmit: (claim: string, image?: { b
       setImage({ base64: encoded.split(',')[1], mime, name: file.name, url: encoded });
     } catch { setImage(null); }
   };
-  const submit = () => onSubmit(claim.trim(), image ? { base64: image.base64, mime: image.mime, name: image.name } : undefined);
+  const submit = () => { voice.stop(); onSubmit(claim.trim(), image ? { base64: image.base64, mime: image.mime, name: image.name } : undefined); };
   return (
     <main className="main">
       <section className={`home-hero ${settings.showHero ? '' : 'no-hero'}`}>
@@ -129,8 +138,8 @@ function HomeView({ onSubmit, pending }: { onSubmit: (claim: string, image?: { b
         </div>
         {tab === 'claim' ? (
           <div>
-            <textarea className="claim-box" value={claim} maxLength={2000} onChange={(e) => setClaim(e.target.value)} placeholder={t(placeholderKeys[placeholderIndex])} aria-label={t('home.claimAria')} data-testid="input-claim" />
-            <div className="input-bottom"><span className="hint">{t('home.charHint', { n: claim.length })}</span><button className="primary-btn" disabled={pending || !claim.trim()} onClick={submit} data-testid="button-check-claim">{pending ? <LoaderCircle size={15} /> : <Search size={15} />}{t('home.checkThis')}</button></div>
+            <textarea className="claim-box" value={claim} maxLength={2000} onChange={(e) => { setClaim(e.target.value); if (voice.error) voice.clearError(); }} placeholder={t(placeholderKeys[placeholderIndex])} aria-label={t('home.claimAria')} data-testid="input-claim" />
+            <div className="input-bottom">{voice.listening ? <span className="hint listening" role="status" data-testid="status-listening">{t('mic.listening')}</span> : voice.error ? <span className="hint mic-err" role="alert" data-testid="status-voice-error">{t(voice.error)}</span> : <span className="hint">{t('home.charHint', { n: claim.length })}</span>}<div className="input-actions">{voice.supported && <MicButton listening={voice.listening} onToggle={voice.toggle} disabled={pending} />}<button className="primary-btn" disabled={pending || !claim.trim()} onClick={submit} data-testid="button-check-claim">{pending ? <LoaderCircle size={15} /> : <Search size={15} />}{t('home.checkThis')}</button></div></div>
           </div>
         ) : (
           <div style={{ paddingTop: 15 }}>
@@ -152,6 +161,7 @@ function HomeView({ onSubmit, pending }: { onSubmit: (claim: string, image?: { b
           <div className="how-item"><div className="how-icon"><MessageCircle size={16} /></div><div><strong>{t('how.t3')}</strong><span>{t('how.b3')}</span></div></div>
         </div>
       </section>
+      <CheckAnywhere />
       <Footer />
     </main>
   );
@@ -201,9 +211,8 @@ function CountUp({ value }: { value: number }) {
   }, [count, reduceMotion, value]);
   return <motion.span>{rounded}</motion.span>;
 }
-function ClaimDetail({ item, index }: { item: CheckedClaim; index: number }) {
-  const { t, settings } = useSettings();
-  const [tone, setTone] = useState<Tone>(settings.explanation);
+function ClaimDetail({ item, index, tone, setTone, speech, lang }: { item: CheckedClaim; index: number; tone: Tone; setTone: (t: Tone) => void; speech: string; lang: Lang }) {
+  const t = useT();
   const [openTactic, setOpenTactic] = useState<number | null>(null);
   const explanation = [item.explanation, item.explanation_simple, item.explanation_elder][tone];
   const breakdown = item.evidence_breakdown;
@@ -216,6 +225,7 @@ function ClaimDetail({ item, index }: { item: CheckedClaim; index: number }) {
         <div className="tone-toggle" role="group" aria-label={t('tone.label')}>{toneKeys.map((key, i) => <button key={key} className={tone === i ? 'active' : ''} aria-pressed={tone === i} onClick={() => setTone(i as Tone)} data-testid={`button-tone-${i}`}>{t(key)}</button>)}</div>
       </div>
       <h2 className="selected-claim">{item.text}</h2>
+      <div className="detail-speak"><SpeakButton id={`claim-${index}`} text={speech} lang={lang} ariaKey="read.claimAria" testId={`button-read-claim-${index}`} /></div>
       {explanation && <AnimatePresence mode="wait"><motion.p key={tone} className="explanation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} data-testid={`text-explanation-${index}`}>{explanation}</motion.p></AnimatePresence>}
       <div className="meter-title"><span>{t('res.strength')}</span><span className="evidence-number" data-testid={`text-evidence-strength-${index}`}><CountUp value={strength} /></span></div>
       <div className="meter-track"><motion.div className="meter-fill" initial={{ scaleX: 0 }} animate={{ scaleX: strength / 100 }} transition={{ duration: .9, delay: .12 }} /></div>
@@ -276,10 +286,15 @@ function ShareModal({ result, claim, selected, onClose }: { result: CheckResult;
   </motion.div>;
 }
 
-function ResultsView({ result, inputClaim, onReset }: { result: CheckResult; inputClaim: string; onReset: () => void }) {
-  const t = useT();
+function ResultsView({ result, inputClaim, quickClaim, resultLang, onReset }: { result: CheckResult; inputClaim: string; quickClaim: string; resultLang: Lang; onReset: () => void }) {
+  const { t, settings } = useSettings();
   const reduceMotion = useMotionOff();
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelectedRaw] = useState(0);
+  const [tone, setTone] = useState<Tone>(settings.explanation);
+  const setSelected = (i: number) => { if (i !== selected) { setSelectedRaw(i); setTone(settings.explanation); } };
+  // Stop any reading when the claim, style or language changes, and when leaving results.
+  useEffect(() => { stopSpeech(); }, [selected, tone, settings.language]);
+  useEffect(() => () => stopSpeech(), []);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const selectedClaim = result.claims?.[selected];
@@ -306,11 +321,17 @@ function ResultsView({ result, inputClaim, onReset }: { result: CheckResult; inp
     catch { setCopied(false); }
   };
   const mood = verdictClass(result.overall_verdict);
+  const tr = (key: TKey) => translate(resultLang, key);
+  const actionText = result.action || tr('res.actionFallback');
+  const explanationFor = (c?: CheckedClaim) => (c ? [c.explanation, c.explanation_simple, c.explanation_elder][tone] || c.explanation || '' : '');
+  const join = (parts: (string | undefined)[]) => parts.map((p) => (p || '').trim()).filter(Boolean).map((p) => (/[.!?।]$/.test(p) ? p : `${p}.`)).join(' ');
+  const overallSpeech = join([tr(verdictKey(result.overall_verdict)), actionText, explanationFor(selectedClaim) || result.summary]);
+  const claimSpeech = selectedClaim ? join([tr(verdictKey(selectedClaim.verdict)), actionText, explanationFor(selectedClaim)]) : '';
   return <main className={`main results mood-${mood}`} data-testid="content-results">
     <div className="results-head"><div><div className="eyebrow"><span className="eyebrow-dot" />{t('res.complete')}</div><h1>{result.overall_verdict === 'TRUE' ? t('res.headTrue') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</h1></div><button className="share-btn" onClick={() => setShareOpen(true)} data-testid="button-open-share"><Share2 size={14} />{t('res.share')}</button></div>
     <p className="next-note" data-testid="text-next-check-note">{t('res.nextNote')}</p>
     <motion.div className={`verdict-hero ${mood}`} initial={{ opacity: 0, y: 12 }} animate={mood === 'false' && !reduceMotion ? { opacity: 1, y: [0, 3, -2, 0] } : { opacity: 1, y: 0 }} transition={{ duration: mood === 'false' ? .36 : .3 }} data-testid="status-overall-verdict">
-      <div><div className="verdict-label"><VerdictIcon verdict={result.overall_verdict} size={21} />{result.overall_verdict === 'TRUE' ? t('res.legit') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</div><p>{result.summary || t('res.summaryFallback')}</p></div><div className="action-line">{result.action || t('res.actionFallback')}</div>
+      <div><div className="verdict-label"><VerdictIcon verdict={result.overall_verdict} size={21} />{result.overall_verdict === 'TRUE' ? t('res.legit') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</div><p>{result.summary || t('res.summaryFallback')}</p></div><div className="verdict-tools"><div className="action-line">{result.action || t('res.actionFallback')}</div><SpeakButton id="overall" text={overallSpeech} lang={resultLang} ariaKey="read.overallAria" testId="button-read-overall" /></div>
       {result.overall_verdict === 'FALSE' && <motion.div className="verdict-stamp" initial={reduceMotion ? { scale: 1, rotate: -8, opacity: 0 } : { scale: .45, rotate: -15, opacity: 0 }} animate={{ scale: 1, rotate: -8, opacity: .28 }} transition={{ type: 'spring', stiffness: 310, damping: 14, delay: .16 }}>{t('verdict.FALSE')}</motion.div>}
       {result.overall_verdict === 'TRUE' && !reduceMotion && <div className="verdict-confetti" aria-hidden="true">{['#7ab966', '#e1bd49', '#42a982', '#baa7df', '#dba85b'].map((color, i) => <motion.i key={i} style={{ background: color }} initial={{ opacity: 0, y: -5, rotate: 0 }} animate={{ opacity: [0, .9, 0], y: [0, 28 + i * 3, 52], rotate: [0, 70, 150] }} transition={{ duration: .9, delay: i * .07 }} />)}</div>}
     </motion.div>
@@ -322,9 +343,10 @@ function ResultsView({ result, inputClaim, onReset }: { result: CheckResult; inp
           {result.claims?.map((item, i) => <button key={`${item.text}-${i}`} className={`claim-select ${i === selected ? 'selected' : ''}`} onClick={() => setSelected(i)} data-testid={`button-select-claim-${i}`}><span className={`claim-verdict ${verdictClass(item.verdict)}`} style={{ color: item.verdict === 'TRUE' ? '#18794f' : item.verdict === 'FALSE' ? '#b72f4b' : '#9b7118' }}><VerdictIcon verdict={item.verdict} size={13} />{t(verdictKey(item.verdict))}</span>{item.text}</button>)}
         </div>
         {result.calm_reply && <div className="reply-card"><h3 className="panel-title" style={{ marginBottom: 7 }}>{t('res.calmReply')}</h3><p>{result.calm_reply}</p><div className="reply-actions"><button className="primary-btn" onClick={() => void copyReply()} data-testid="button-copy-calm-reply">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? t('res.copied') : t('res.copyReply')}</button></div></div>}
+        <CopyQuickLinkButton claim={quickClaim} lang={resultLang} />
         <button onClick={onReset} className="secondary-btn" style={{ marginTop: 12 }} data-testid="button-new-check"><RotateCcw size={14} />{t('res.another')}</button>
       </section>
-      {selectedClaim ? <ClaimDetail key={selected} item={selectedClaim} index={selected} /> : <div className="panel panel-pad"><h2 className="panel-title">{t('res.noDetailsTitle')}</h2><p className="original-text">{t('res.noDetails')}</p></div>}
+      {selectedClaim ? <ClaimDetail key={selected} item={selectedClaim} index={selected} tone={tone} setTone={setTone} speech={claimSpeech} lang={resultLang} /> : <div className="panel panel-pad"><h2 className="panel-title">{t('res.noDetailsTitle')}</h2><p className="original-text">{t('res.noDetails')}</p></div>}
     </div>
     <Footer />
     <AnimatePresence>{shareOpen && selectedClaim && <ShareModal result={result} claim={selectedClaim} selected={selected} onClose={() => setShareOpen(false)} />}</AnimatePresence>
@@ -339,6 +361,9 @@ function Experience() {
   const [analysisStep, setAnalysisStep] = useState(0);
   const { settings, update, t } = useSettings();
   const language = settings.language;
+  const [quick] = useState(readQuickParams);
+  const [prefill, setPrefill] = useState(quick.claim);
+  const [resultLang, setResultLang] = useState<Lang>(language);
   const mutation = useCheckClaim();
   const lastInput = useRef<CheckInput | null>(null);
   const stepsTimer = useRef<number | undefined>(undefined);
@@ -348,7 +373,8 @@ function Experience() {
     stepsTimer.current = window.setInterval(() => setAnalysisStep((s) => Math.min(3, s + 1)), 1350);
     return () => window.clearInterval(stepsTimer.current);
   }, [mutation.isPending]);
-  const submitInput = (claim: string, image?: { base64: string; mime: CheckInput['imageMime']; name: string }) => {
+  const submitInput = (claim: string, image?: { base64: string; mime: CheckInput['imageMime']; name: string }, langOverride?: Lang) => {
+    const requestLang = langOverride ?? language;
     const cleaned = claim.trim();
     if (!cleaned && !image) { setError({ key: 'err.empty' }); return; }
     if (cleaned.length > 2000) { setError({ key: 'err.length' }); return; }
@@ -359,7 +385,10 @@ function Experience() {
     setError(null);
     setResult(null);
     setSubmittedClaim(cleaned || image?.name || t('an.imageClaim'));
-    const input: CheckInput = { language, ...(cleaned ? { claim: cleaned } : {}), ...(image ? { imageBase64: image.base64, imageMime: image.mime } : {}) };
+    stopSpeech();
+    setPrefill('');
+    setResultLang(requestLang);
+    const input: CheckInput = { language: requestLang, ...(cleaned ? { claim: cleaned } : {}), ...(image ? { imageBase64: image.base64, imageMime: image.mime } : {}) };
     lastInput.current = input;
     setView('analysis');
     mutation.mutate({ data: input }, {
@@ -367,8 +396,15 @@ function Experience() {
       onError: (err) => { setError(toUiError(err)); setView('analysis'); },
     });
   };
+  const submitRef = useRef(submitInput); submitRef.current = submitInput;
+  useEffect(() => {
+    if (quick.lang) update('language', quick.lang);
+    // takeAutoRun is a module-level once-guard, safe under StrictMode double effects.
+    if (takeAutoRun()) submitRef.current(quick.claim, undefined, quick.lang ?? undefined);
+  }, [quick, update]);
   const retry = () => {
     if (!lastInput.current) { setView('home'); return; }
+    setResultLang(lastInput.current.language as Lang);
     setError(null);
     setView('analysis');
     mutation.mutate({ data: lastInput.current }, {
@@ -376,13 +412,13 @@ function Experience() {
       onError: (err) => setError(toUiError(err)),
     });
   };
-  const reset = () => { setView('home'); setError(null); setResult(null); setSubmittedClaim(''); mutation.reset(); };
+  const reset = () => { stopSpeech(); setView('home'); setError(null); setResult(null); setSubmittedClaim(''); mutation.reset(); };
   const mood = view === 'results' && result ? verdictClass(result.overall_verdict) : undefined;
   return <div className="shell" data-mood={mood}>
     <header className="topbar"><button onClick={reset} style={{ border: 0, background: 'transparent', padding: 0, minHeight: 44 }} aria-label={t('nav.home')} data-testid="button-logo-home"><Logo /></button><div className="nav-right"><button className="nav-link" onClick={reset} data-testid="link-fact-check">{t('nav.factCheck')}</button><label style={{ display: 'flex', alignItems: 'center', gap: 7 }}><span className="sr-only">{t('nav.language')}</span><select className="language" value={language} onChange={(e) => update('language', e.target.value as Lang)} aria-label={t('nav.language')} data-testid="select-language">{LANGS.map((value) => <option key={value} value={value}>{LANGUAGE_NAMES[value]}</option>)}</select></label><SettingsButton /></div></header>
-    {view === 'home' && <HomeView onSubmit={submitInput} pending={mutation.isPending} />}
+    {view === 'home' && <HomeView onSubmit={submitInput} pending={mutation.isPending} initialClaim={prefill} />}
     {view === 'analysis' && <AnalysisView claim={submittedClaim} step={analysisStep} error={error} pending={mutation.isPending} onRetry={retry} onReset={reset} />}
-    {view === 'results' && result && <ResultsView result={result} inputClaim={submittedClaim} onReset={reset} />}
+    {view === 'results' && result && <ResultsView result={result} inputClaim={submittedClaim} quickClaim={lastInput.current?.claim || result.claims?.[0]?.text || ''} resultLang={resultLang} onReset={reset} />}
   </div>;
 }
 

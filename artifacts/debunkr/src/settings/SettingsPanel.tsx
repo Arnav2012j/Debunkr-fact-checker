@@ -51,6 +51,7 @@ function Panel({ onClose }: { onClose: () => void }) {
           <Segmented id="text" label={t('set.textSize')} value={settings.textSize} options={[{ value: 'small', label: t('set.small') }, { value: 'medium', label: t('set.medium') }, { value: 'large', label: t('set.large') }] as Option<Settings['textSize']>[]} onChange={set('textSize')} />
           <Segmented id="motion" label={t('set.motion')} value={settings.reduceMotion} options={[{ value: 'on', label: t('set.on') }, { value: 'off', label: t('set.off') }, { value: 'system', label: t('set.system') }] as Option<Settings['reduceMotion']>[]} onChange={set('reduceMotion')} />
           <Segmented id="hero" label={t('set.hero')} value={settings.showHero} options={[{ value: true, label: t('set.show') }, { value: false, label: t('set.hide') }]} onChange={set('showHero')} />
+          <Segmented id="speed" label={t('set.readSpeed')} value={settings.readSpeed} options={[{ value: 'slow', label: t('set.slow') }, { value: 'normal', label: t('set.normal') }, { value: 'fast', label: t('set.fast') }] as Option<Settings['readSpeed']>[]} onChange={set('readSpeed')} />
         </div>
         <div className="set-foot">
           {confirming ? (

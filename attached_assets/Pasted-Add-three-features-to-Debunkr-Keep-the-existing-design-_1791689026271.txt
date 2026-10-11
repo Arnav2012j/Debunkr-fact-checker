@@ -1,0 +1,28 @@
+Add three features to Debunkr. Keep the existing design, colors, fonts, animations and the Settings menu. Don't change anything else, and don't add new libraries. None of these features may make extra Gemini or Tavily calls.
+
+1. VOICE INPUT
+- Add a microphone button inside the input card, next to the Check button.
+- Use the browser's built-in Web Speech API (SpeechRecognition / webkitSpeechRecognition). Feature-detect it, and hide the mic button if unsupported.
+- Tap to start, tap again to stop. While listening, show a pulsing mic and a small "Listening..." label, and stream the live transcript into the text box. Never auto-submit; the user presses Check.
+- Set the recognition language from the app language setting (en-IN, hi-IN, es-ES, fr-FR).
+- Handle permission denied, no speech detected and errors with a friendly message. Add aria labels and a 44px tap target.
+
+2. READ ALOUD
+- On the results page, add a speaker button on the overall verdict card and on each opened claim panel.
+- Use the browser's SpeechSynthesis API. Read the verdict, the action line ("Safe to share" etc.) and the currently selected explanation style (Standard, Like I'm 12, For my grandparent).
+- Choose a voice that matches the app language when one is available. If none is available for that language, show "Read aloud isn't available for this language on your device" and don't read it in the wrong language.
+- The button toggles between play and stop, and stops reading automatically when the user leaves the page, opens another claim or starts a new check. Provide a speed control (slow, normal, fast) in Settings.
+
+3. QUICK-CHECK LINK AND BOOKMARKLET
+- Support URLs like /?claim=TEXT&lang=en. On load, read the claim parameter (trim to 2,000 characters, sanitize it, and render it as plain text only, never as HTML), and prefill the input box. Do NOT run the check automatically unless the URL also has auto=1, in which case start the check right away and use the cache if the claim was already checked.
+- Add a section on Home called "Check from anywhere" with:
+  a) A draggable link "Check with Debunkr" that is a bookmarklet built at runtime using window.location.origin. The bookmarklet reads the selected text on any page (window.getSelection) and opens the Debunkr quick-check URL in a new tab with the selection (max 500 characters, URL-encoded). If nothing is selected, it opens Debunkr's home page.
+  b) Short instructions for desktop ("Drag this to your bookmarks bar, select text on any page, click it") and mobile ("Long press, copy the link, then save it as a bookmark and use it from the share menu or bookmarks"), plus a note that some strict websites block bookmarklets.
+  c) A "Copy quick-check link" button on the results page that copies the quick-check URL for that claim, so a shared link opens with the claim ready.
+- Don't store or log claims beyond the existing cache.
+
+QUALITY
+- Respect the Settings menu (language, reduce motion, theme, text size) in all new UI. Add the new labels to the translations file for English, Hindi, Spanish and French.
+- Works on mobile, with 44px tap targets and no layout shift.
+- Don't make any API calls when testing. Test only: mic button shows or hides correctly, read aloud plays and stops on a cached result, and /?claim=Test prefills the box without checking.
+- Report what works and what you skipped.
