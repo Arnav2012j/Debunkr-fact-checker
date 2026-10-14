@@ -1,0 +1,31 @@
+Redesign Debunkr's look and layout to be clean, playful and unique. Keep ALL existing features working (fact check flow, caching, settings menu, languages, voice input, read aloud, quick-check link, share card, estimated timer, explanation toggle). Do not change the backend or API logic and do not make any API calls; test with cached results and a mocked delay only. Priorities: A first, then B, then C. If you run short, finish A and B and report what C items remain.
+
+A. DECLUTTER (less is more)
+- Home above the fold shows only: the mascot, the headline "Is it true? Let's find out.", one big input card (mic and Check button inside), and 3 small tappable "try one" chips. Move "how it works", the quick-check bookmarklet and the X-ray hero card below the fold in a section called "See it in action" (keep the scan animation there). Nothing else above the fold.
+- Nav: logo, "Fact check", and the gear icon only. Move the language selector into Settings. Keep it sticky and slim.
+- Results show first: a big verdict sticker with the mascot, a one-line reason, the "Safe to share / Don't share this / Wait" line, and three buttons: Share, Copy calm reply, Read aloud. Everything else goes into collapsible sections (closed by default, with smooth open/close): "Why we think so" (claims and explanation with the style toggle), "Sources", "How it spreads" (tactics and red flags), "Evidence at a glance" (agreement bar and strength).
+- Use short text, big tap targets, lots of whitespace, and at most one idea per card.
+
+B. NEW LOOK (sticker desk)
+- Fonts: headings Bricolage Grotesque (weights 700-800), body DM Sans, loaded from Google Fonts with system fallbacks.
+- Light theme: background #FFF4DD with a faint dotted-paper pattern, cards #FFFFFF with a 2px ink (#17151F) outline, 14px radius, and a 4px hard offset shadow (no blur). Some cards tilt by 1 to 2 degrees. Primary button: yellow #FFD23F with ink text, ink outline and hard shadow that presses down on click.
+- Night theme: background #121212, cards #1E1E1E with 2px cream (#F5EBD7) outlines and hard cream-tinted shadows, same bright colors. Dark must never turn light when a verdict appears.
+- Verdict colors: TRUE #22C58B, FALSE #FF4B3E, UNCLEAR #5BB5FF. Verdict moods change the sticker, accents and mascot only, never the base theme.
+- Remove the old yellow-green accent, indigo, gradients, glows, glass blur and sparkle icons. Flat color only.
+- GRAPHICS (inline SVG, no image files): (1) the mascot, a round friendly blob with one big magnifying-glass eye, small arms and a blinking eye, in these states: idle, thinking, happy (TRUE), shocked (FALSE), puzzled (UNCLEAR); (2) hand-drawn style squiggle and star decorations in the corners; (3) a marker-style underline under the word "true?" in the headline; (4) round sticker-shaped verdict badges (TRUE, FALSE, UNCLEAR) with a slightly wobbly outline; (5) a friendly empty state and error state with the mascot.
+- Keep the share card's verdict colors, restyled as a sticker.
+
+C. FUN ANIMATIONS (Framer Motion only, no new libraries)
+- Mascot: idle bob and blink on Home. While checking, it looks through the magnifier and sways, synced with the timer and tracker. On TRUE it jumps with spring physics and confetti made of stars and squiggles. On FALSE it gets a shocked pose, a quick shake, and the FALSE sticker slams in. On UNCLEAR it tilts its head with a question mark.
+- Stickers and cards pop in with a springy scale, and chips wiggle on hover or tap. The marker underline draws itself on load. Collapsible sections animate smoothly.
+- Keep the X-ray scan demo in "See it in action", restyled in the new palette.
+- Respect Reduce motion: use static mascot poses and simple fades.
+
+D. SETTINGS HINT BANNER
+- On the first visit, show a small speech bubble pointing at the gear icon, with the mascot's wave: "Psst! Change language, theme and more here." with a "Got it" button. It bounces gently, auto-hides after 10 seconds, never shows again once dismissed (remember in localStorage, with try/catch), and is translated into all four languages. It must not cover the input or Check button, and on mobile it sits below the nav.
+- Add a small "Settings" label next to the gear icon on desktop.
+
+QUALITY
+- Contrast at least 4.5:1 in both themes, tap targets at least 44px, responsive on mobile and tablet, keyboard focus visible (2px ink or cream outline).
+- Page load stays fast: no heavy assets.
+- Test Light and Night, with cached TRUE, FALSE and UNCLEAR results, and the mocked delay. Confirm Night never turns light. Report what was done and what remains.
