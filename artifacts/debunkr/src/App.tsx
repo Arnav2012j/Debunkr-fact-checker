@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { SettingsProvider, useMotionOff, useSettings, useT } from '@/settings/SettingsContext';
 import { SettingsButton } from '@/settings/SettingsPanel';
-import { LANGS, type Lang, type Tone } from '@/settings/settings-store';
-import { LANGUAGE_NAMES, translate, type TKey } from '@/settings/translations';
+import { type Lang, type Tone } from '@/settings/settings-store';
+import { translate, type TKey } from '@/settings/translations';
 import { CheckAnywhere, CopyQuickLinkButton, MicButton, SpeakButton } from '@/features/FeatureUI';
 import { useSpeechInput } from '@/features/use-speech-input';
 import { stopSpeech } from '@/features/speech-synth';
@@ -39,6 +39,69 @@ function Logo() {
 function Footer() {
   const t = useT();
   return <footer className="footer">{t('footer')}</footer>;
+}
+
+type MascotState = 'idle' | 'thinking' | 'happy' | 'shocked' | 'puzzled' | 'error' | 'wave';
+function DeskMascot({ state = 'idle', testId = 'img-mascot' }: { state?: MascotState; testId?: string }) {
+  const reduceMotion = useMotionOff();
+  const arms: Record<MascotState, string> = {
+    idle: 'M48 104c-15 7-24 17-31 15M128 104c15 7 24 17 31 15',
+    thinking: 'M48 104c-14 4-20-7-14-17M128 104c12-2 18-14 10-25',
+    happy: 'M48 100c-14-8-22-24-20-36M128 100c14-8 22-24 20-36',
+    shocked: 'M48 98c-18-4-27-17-27-30M128 98c18-4 27-17 27-30',
+    puzzled: 'M48 104c-15 7-24 17-31 15M128 100c14-4 15-20 5-28',
+    error: 'M48 108c-12 10-22 14-30 10M128 108c12 10 22 14 30 10',
+    wave: 'M48 104c-15 7-24 17-31 15M128 100c18-8 24-22 28-42',
+  };
+  const mouth: Record<MascotState, ReactNode> = {
+    idle: <path d="M76 112q12 9 24 0" />, wave: <path d="M76 110q12 12 24 0" />, happy: <path d="M72 108q16 18 32 0" />,
+    thinking: <path d="M80 114h18" />, shocked: <ellipse cx="88" cy="114" rx="7" ry="9" />, puzzled: <path d="M77 115q6-6 12 0t12 0" />, error: <path d="M76 117q12-9 24 0" />,
+  };
+  const sway = state === 'thinking' ? { rotate: [-5, 5, -5] } : state === 'happy' ? { y: [0, -12, 0], scale: [1, 1.06, 1] } : state === 'shocked' ? { x: [0, -5, 5, -3, 0] } : state === 'puzzled' ? { rotate: [-8, -3, -8] } : state === 'wave' ? { rotate: [0, -3, 0] } : { y: [0, -5, 0] };
+  return <motion.div className={`desk-mascot mascot-${state}`} role="img" aria-hidden="true" data-testid={testId}
+    initial={{ rotate: state === 'puzzled' ? -8 : 0 }}
+    animate={reduceMotion ? { rotate: state === 'puzzled' ? -8 : 0 } : sway}
+    transition={reduceMotion ? { duration: 0 } : state === 'happy' ? { type: 'spring', stiffness: 260, damping: 9, repeat: 2 } : state === 'shocked' ? { duration: .45, repeat: 2 } : { duration: 3, repeat: Infinity, ease: 'easeInOut' }}>
+    <svg viewBox="0 0 180 175">
+      <path d={arms[state]} fill="none" stroke="currentColor" strokeWidth="8" strokeLinecap="round" />
+      <path d="M38 98c0-31 21-54 52-54s52 23 52 54v20c0 16-17 25-52 25s-52-9-52-25z" fill="#FFD23F" stroke="#17151F" strokeWidth="5" />
+      <path d="m115 64 23 22" stroke="#17151F" strokeWidth="11" strokeLinecap="round" />
+      <path d="m115 64 23 22" stroke="#FF4B3E" strokeWidth="5" strokeLinecap="round" />
+      <circle cx="94" cy="68" r="31" fill="#FFFFFF" stroke="#17151F" strokeWidth="6" />
+      <circle cx="94" cy="68" r="22" fill="#DDF3FF" stroke="#17151F" strokeWidth="2" />
+      <motion.g style={{ transformOrigin: '94px 68px' }} animate={reduceMotion ? undefined : { scaleY: [1, 1, .1, 1] }} transition={reduceMotion ? undefined : { duration: 4.2, repeat: Infinity, times: [0, .9, .93, 1] }}>
+        {state === 'happy' ? <path d="M84 70q10-12 20 0" fill="none" stroke="#17151F" strokeWidth="6" strokeLinecap="round" /> : state === 'error' ? <path d="m86 61 16 16m0-16-16 16" stroke="#17151F" strokeWidth="5" strokeLinecap="round" /> : <circle cx={state === 'thinking' ? 101 : 94} cy={state === 'thinking' ? 61 : 69} r={state === 'shocked' ? 12 : 9} fill="#17151F" />}
+        {state !== 'happy' && state !== 'error' && <circle cx={state === 'thinking' ? 104 : 97} cy={state === 'thinking' ? 58 : 66} r="3" fill="#FFFFFF" />}
+      </motion.g>
+      <g fill="none" stroke="#17151F" strokeWidth="5" strokeLinecap="round">{mouth[state]}</g>
+      {state === 'puzzled' && <text x="146" y="44" fontSize="34" fontWeight="800" fill="#5BB5FF" stroke="#17151F" strokeWidth="2">?</text>}
+      {state === 'shocked' && <path d="M148 30v24M160 38l-9 16M136 38l7 16" stroke="#FF4B3E" strokeWidth="5" strokeLinecap="round" />}
+      {state === 'thinking' && <g fill="#5BB5FF" stroke="#17151F" strokeWidth="2"><circle cx="146" cy="44" r="5" /><circle cx="158" cy="30" r="7" /></g>}
+      <path d="m29 38 5-10 6 10 10 4-10 5-6 10-5-10-10-5zM151 129l4-7 4 7 7 3-7 4-4 7-4-7-7-4z" fill="#22C58B" stroke="#17151F" strokeWidth="2" />
+    </svg>
+  </motion.div>;
+}
+
+function FirstVisitHint() {
+  const { t } = useSettings();
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    try { if (window.localStorage.getItem('debunkr.gearHint.dismissed') !== '1') setVisible(true); } catch { setVisible(true); }
+    const timer = window.setTimeout(() => {
+      setVisible(false);
+      try { window.localStorage.setItem('debunkr.gearHint.dismissed', '1'); } catch { /* storage is optional */ }
+    }, 10000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const dismiss = () => {
+    setVisible(false);
+    try { window.localStorage.setItem('debunkr.gearHint.dismissed', '1'); } catch { /* storage is optional */ }
+  };
+  return <AnimatePresence>{visible && <motion.div className="gear-hint" role="status" data-testid="status-settings-hint" initial={{ opacity: 0, y: -7 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
+    <DeskMascot state="wave" testId="img-mascot-hint" />
+    <span>{t('hint.settings')}</span>
+    <button type="button" onClick={dismiss} data-testid="button-dismiss-hint">{t('hint.gotIt')}</button>
+  </motion.div>}</AnimatePresence>;
 }
 
 function XrayCard() {
@@ -124,13 +187,12 @@ function HomeView({ onSubmit, pending, initialClaim }: { onSubmit: (claim: strin
   const submit = () => { voice.stop(); onSubmit(claim.trim(), image ? { base64: image.base64, mime: image.mime, name: image.name } : undefined); };
   return (
     <main className="main">
+      <div className="home-fold">
       <section className={`home-hero ${settings.showHero ? '' : 'no-hero'}`}>
         <motion.div className="hero-copy" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .5 }}>
-          <div className="eyebrow"><span className="eyebrow-dot" />{t('home.eyebrow')}</div>
-          <h1>{t('home.title1')}<br />{t('home.title2')}</h1>
-          <p>{t('home.body')}</p>
+          <h1><span className="headline-question">{t('home.title1')}<motion.span className="headline-swoosh" aria-hidden="true" initial={reduceMotion ? { scaleX: 1 } : { scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: .7, delay: .35 }} /></span><br />{t('home.title2')}</h1>
         </motion.div>
-        {settings.showHero && <XrayCard />}
+        {settings.showHero && <DeskMascot state="idle" testId="img-mascot-home" />}
       </section>
       <section className="input-card" aria-label={t('home.checkAria')}>
         <div className="tabs" role="tablist">
@@ -152,17 +214,24 @@ function HomeView({ onSubmit, pending, initialClaim }: { onSubmit: (claim: strin
             <div className="input-bottom"><span className="hint">{t('home.imageHint')}</span><button className="primary-btn" disabled={pending || !image} onClick={submit} data-testid="button-check-image">{pending ? <LoaderCircle size={15} /> : <Search size={15} />}{t('home.checkImage')}</button></div>
           </div>
         )}
+      <div className="examples"><span className="examples-label">{t('home.tryExample')}</span>{exampleKeys.map((key, i) => <motion.button key={key} className="example-chip" whileHover={reduceMotion ? undefined : { rotate: [0, -2, 2, 0] }} transition={{ duration: .28 }} onClick={() => { setTab('claim'); setClaim(t(key)); }} data-testid={`button-example-${i + 1}`}>{t(key)}</motion.button>)}</div>
       </section>
-      <div className="examples"><span className="examples-label">{t('home.tryExample')}</span>{exampleKeys.map((key, i) => <button key={key} className="example-chip" onClick={() => { setTab('claim'); setClaim(t(key)); }} data-testid={`button-example-${i + 1}`}>{t(key)}</button>)}</div>
-      <section className="how">
-        <h2>{t('how.title')}</h2>
-        <div className="how-row">
-          <div className="how-item"><div className="how-icon"><Clipboard size={16} /></div><div><strong>{t('how.t1')}</strong><span>{t('how.b1')}</span></div></div>
-          <div className="how-item"><div className="how-icon"><Globe2 size={16} /></div><div><strong>{t('how.t2')}</strong><span>{t('how.b2')}</span></div></div>
-          <div className="how-item"><div className="how-icon"><MessageCircle size={16} /></div><div><strong>{t('how.t3')}</strong><span>{t('how.b3')}</span></div></div>
+      </div>
+      <details className="in-action">
+        <summary>{t('home.seeAction')}</summary>
+        <div className="in-action-content">
+          <section className="how">
+            <h2>{t('how.title')}</h2>
+            <div className="how-row">
+              <div className="how-item"><div className="how-icon"><Clipboard size={16} /></div><div><strong>{t('how.t1')}</strong><span>{t('how.b1')}</span></div></div>
+              <div className="how-item"><div className="how-icon"><Globe2 size={16} /></div><div><strong>{t('how.t2')}</strong><span>{t('how.b2')}</span></div></div>
+              <div className="how-item"><div className="how-icon"><MessageCircle size={16} /></div><div><strong>{t('how.t3')}</strong><span>{t('how.b3')}</span></div></div>
+            </div>
+          </section>
+          <XrayCard />
+          <CheckAnywhere />
         </div>
-      </section>
-      <CheckAnywhere />
+      </details>
       <Footer />
     </main>
   );
@@ -224,6 +293,7 @@ function AnalysisView({ claim, attempt, error, pending, onRetry, onReset, onAnno
   return (
     <main className="main analysis">
       <div className="eyebrow" style={{ justifyContent: 'center' }}><span className="eyebrow-dot" />{t('an.eyebrow')}</div>
+      <div className="analysis-mascot"><DeskMascot state={error ? 'error' : 'thinking'} testId="img-mascot-analysis" /></div>
       <h1 className="page-title">{t('an.title')}</h1>
       <p className="page-subtitle">{t('an.sub')}</p>
       <motion.div className="analysis-claim" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} data-testid="content-analysis-claim">
@@ -252,6 +322,15 @@ function VerdictIcon({ verdict, size = 17 }: { verdict?: string; size?: number }
 
 const toneKeys: TKey[] = ['tone.0', 'tone.1', 'tone.2'];
 const verdictKey = (v?: string): TKey => (v === 'TRUE' ? 'verdict.TRUE' : v === 'FALSE' ? 'verdict.FALSE' : 'verdict.UNCLEAR');
+function ResultDisclosure({ title, testId, children }: { title: string; testId: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const reduceMotion = useMotionOff();
+  return <section className="result-disclosure">
+    <button type="button" className="disclosure-trigger" aria-expanded={open} aria-controls={id} data-testid={testId} onClick={() => setOpen((value) => !value)}>{title}<span aria-hidden="true">{open ? '−' : '+'}</span></button>
+    <AnimatePresence initial={false}>{open && <motion.div id={id} className="disclosure-content" initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -3 }} transition={{ duration: .2 }}>{children}</motion.div>}</AnimatePresence>
+  </section>;
+}
 function CountUp({ value }: { value: number }) {
   const count = useMotionValue(0);
   const rounded = useTransform(count, (latest) => `${Math.round(latest)}%`);
@@ -263,31 +342,46 @@ function CountUp({ value }: { value: number }) {
   }, [count, reduceMotion, value]);
   return <motion.span>{rounded}</motion.span>;
 }
-function ClaimDetail({ item, index, tone, setTone, speech, lang }: { item: CheckedClaim; index: number; tone: Tone; setTone: (t: Tone) => void; speech: string; lang: Lang }) {
+function ClaimDetail({ item, index, tone, setTone, intro, calmReply, speech, lang }: { item?: CheckedClaim; index: number; tone: Tone; setTone: (t: Tone) => void; intro: ReactNode; calmReply?: string; speech: string; lang: Lang }) {
   const t = useT();
   const [openTactic, setOpenTactic] = useState<number | null>(null);
-  const explanation = [item.explanation, item.explanation_simple, item.explanation_elder][tone];
-  const breakdown = item.evidence_breakdown;
+  const explanation = item ? [item.explanation, item.explanation_simple, item.explanation_elder][tone] : '';
+  const breakdown = item?.evidence_breakdown;
   const total = breakdown ? Math.max(1, breakdown.supporting + breakdown.disputing + breakdown.neutral) : 1;
-  const sourceCount = item.sources?.length ?? 0;
-  const strength = Math.max(0, Math.min(100, item.evidence_strength || 0));
-  const tacticDescription = (tactic: string, i: number) => item.tactic_explanations?.[i] || t('res.tacticFallback', { tactic });
+  const sources = item?.sources?.filter((source) => {
+    try { return ['http:', 'https:'].includes(new URL(source.url).protocol); } catch { return false; }
+  }) ?? [];
+  const sourceCount = sources.length;
+  const strength = Math.max(0, Math.min(100, item?.evidence_strength || 0));
+  const tacticDescription = (tactic: string, i: number) => item?.tactic_explanations?.[i] || t('res.tacticFallback', { tactic });
   return (
-    <motion.section className="panel claim-detail" key={item.text} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .28 }} data-testid={`panel-claim-explanation-${index}`}>
-      <div className="detail-top"><span className={`badge-verdict ${verdictClass(item.verdict)}`}><VerdictIcon verdict={item.verdict} size={13} />{t(verdictKey(item.verdict))}</span>
-        <div className="tone-toggle" role="group" aria-label={t('tone.label')}>{toneKeys.map((key, i) => <button key={key} className={tone === i ? 'active' : ''} aria-pressed={tone === i} onClick={() => setTone(i as Tone)} data-testid={`button-tone-${i}`}>{t(key)}</button>)}</div>
-      </div>
-      <h2 className="selected-claim">{item.text}</h2>
-      <div className="detail-speak"><SpeakButton id={`claim-${index}`} text={speech} lang={lang} ariaKey="read.claimAria" testId={`button-read-claim-${index}`} /></div>
-      {explanation && <AnimatePresence mode="wait"><motion.p key={tone} className="explanation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .18 }} data-testid={`text-explanation-${index}`}>{explanation}</motion.p></AnimatePresence>}
-      <div className="meter-title"><span>{t('res.strength')}</span><span className="evidence-number" data-testid={`text-evidence-strength-${index}`}><CountUp value={strength} /></span></div>
-      <div className="meter-track"><motion.div className="meter-fill" initial={{ scaleX: 0 }} animate={{ scaleX: strength / 100 }} transition={{ duration: .9, delay: .12 }} /></div>
-      {breakdown && <div className="agreement"><div className="meter-title"><span>{t('res.agreement')}</span><span>{t('res.sources', { n: sourceCount })}</span></div><div className="agreement-bar" data-testid={`bar-evidence-agreement-${index}`}><motion.span className="support" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.supporting / total * 100}%`, transformOrigin: 'left' }} /><motion.span className="dispute" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.disputing / total * 100}%`, transformOrigin: 'left' }} /><motion.span className="neutral" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.neutral / total * 100}%`, transformOrigin: 'left' }} /></div><div className="agreement-legend"><span>{t('res.supporting', { n: breakdown.supporting })}</span><span>{t('res.disputing', { n: breakdown.disputing })}</span><span>{t('res.neutral', { n: breakdown.neutral })}</span></div></div>}
-      {!!item.red_flags?.length && <div className="detail-section"><h3>{t('res.redFlags')}</h3>{item.red_flags.map((flag, i) => <div className="redflag" key={`${flag}-${i}`}><Flag size={13} />{flag}</div>)}</div>}
-      {!!item.tactics?.length && <div className="detail-section"><h3>{t('res.tactics')}</h3><div className="tactics">{item.tactics.map((tactic, i) => <div className="tactic-wrap" key={`${tactic}-${i}`}><button className="tactic" onClick={() => setOpenTactic(openTactic === i ? null : i)} data-testid={`button-tactic-${index}-${i}`}><Tag size={11} />{tactic}<ChevronDown size={11} /></button><AnimatePresence>{openTactic === i && <motion.div className="tactic-pop" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>{tacticDescription(tactic, i)}</motion.div>}</AnimatePresence></div>)}</div></div>}
-      {item.why_it_spreads && <div className="detail-section"><h3>{t('res.why')}</h3><div className="why-card">{item.why_it_spreads}</div></div>}
-      {!!item.sources?.length && <div className="detail-section"><h3>{t('res.grounded')}</h3>{item.sources.map((source, i) => <motion.a className="source-card" key={`${source.url}-${i}`} href={source.url} target="_blank" rel="noreferrer" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * .12 }} data-testid={`card-source-${index}-${i}`}><div className="source-meta"><span className="source-type">{source.type}</span><ArrowRight size={13} className="source-arrow" /></div><div className="source-title">{source.title}</div><div className="source-publisher">{source.publisher}</div><div className="source-url">{source.url}</div></motion.a>)}</div>}
-    </motion.section>
+    <section className="result-details" data-testid={`panel-claim-explanation-${index}`}>
+      <ResultDisclosure title={t('res.whyThink')} testId="button-disclosure-why">
+          {intro}
+          {item ? <>
+          <div className="detail-top"><span className={`claim-sticker ${verdictClass(item.verdict)}`}><VerdictIcon verdict={item.verdict} size={13} />{t(verdictKey(item.verdict))}</span></div>
+          <div className="tone-toggle" role="group" aria-label={t('tone.label')}>{toneKeys.map((key, i) => <button key={key} className={tone === i ? 'active' : ''} aria-pressed={tone === i} onClick={() => setTone(i as Tone)} data-testid={`button-tone-${i}`}>{t(key)}</button>)}</div>
+          <h2 className="selected-claim">{item.text}</h2>
+          {explanation && <AnimatePresence mode="wait"><motion.p key={tone} className="explanation" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -3 }} transition={{ duration: .18 }} data-testid={`text-explanation-${index}`}>{explanation}</motion.p></AnimatePresence>}
+          <div className="detail-speak"><SpeakButton id={`claim-${index}`} text={speech} lang={lang} ariaKey="read.claimAria" testId={`button-read-claim-${index}`} /></div>
+          </> : <div className="empty-note"><DeskMascot state="puzzled" testId="img-mascot-empty" /><p className="original-text">{t('res.noDetails')}</p></div>}
+          {calmReply && <div className="reply-card"><h3 className="panel-title" style={{ marginBottom: 7 }}>{t('res.calmReply')}</h3><p data-testid="text-calm-reply">{calmReply}</p></div>}
+      </ResultDisclosure>
+      <ResultDisclosure title={t('res.sourcesPanel')} testId="button-disclosure-sources">
+          {sources.length ? sources.map((source, i) => <motion.a className="source-card" key={`${source.url}-${i}`} href={source.url} target="_blank" rel="noreferrer" initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * .12 }} data-testid={`card-source-${index}-${i}`}><div className="source-meta"><span className="source-type">{source.type}</span><ArrowRight size={13} className="source-arrow" /></div><div className="source-title">{source.title}</div><div className="source-publisher">{source.publisher}</div><div className="source-url">{source.url}</div></motion.a>) : <p className="original-text">{t('res.noSources')}</p>}
+      </ResultDisclosure>
+      <ResultDisclosure title={t('res.spreads')} testId="button-disclosure-spread">
+          {!!item?.red_flags?.length && <div className="detail-section"><h3>{t('res.redFlags')}</h3>{item.red_flags.map((flag, i) => <div className="redflag" key={`${flag}-${i}`}><Flag size={13} />{flag}</div>)}</div>}
+          {!!item?.tactics?.length && <div className="detail-section"><h3>{t('res.tactics')}</h3><div className="tactics">{item.tactics.map((tactic, i) => <div className="tactic-wrap" key={`${tactic}-${i}`}><button className="tactic" onClick={() => setOpenTactic(openTactic === i ? null : i)} data-testid={`button-tactic-${index}-${i}`}><Tag size={11} />{tactic}<ChevronDown size={11} /></button><AnimatePresence>{openTactic === i && <motion.div className="tactic-pop" initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}>{tacticDescription(tactic, i)}</motion.div>}</AnimatePresence></div>)}</div></div>}
+          {item?.why_it_spreads && <div className="detail-section"><h3>{t('res.why')}</h3><div className="why-card">{item.why_it_spreads}</div></div>}
+          {!item?.red_flags?.length && !item?.tactics?.length && !item?.why_it_spreads && <p className="original-text">{t('res.noSpread')}</p>}
+      </ResultDisclosure>
+      <ResultDisclosure title={t('res.evidenceAtGlance')} testId="button-disclosure-evidence">
+          <div className="meter-title"><span>{t('res.strength')}</span><span className="evidence-number" data-testid={`text-evidence-strength-${index}`}><CountUp value={strength} /></span></div>
+          <div className="meter-track"><motion.div className="meter-fill" initial={{ scaleX: 0 }} animate={{ scaleX: strength / 100 }} transition={{ duration: .9, delay: .12 }} /></div>
+          {breakdown && <div className="agreement"><div className="meter-title"><span>{t('res.agreement')}</span><span>{t('res.sources', { n: sourceCount })}</span></div><div className="agreement-bar" data-testid={`bar-evidence-agreement-${index}`}><motion.span className="support" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.supporting / total * 100}%`, transformOrigin: 'left' }} /><motion.span className="dispute" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.disputing / total * 100}%`, transformOrigin: 'left' }} /><motion.span className="neutral" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} style={{ width: `${breakdown.neutral / total * 100}%`, transformOrigin: 'left' }} /></div><div className="agreement-legend"><span>{t('res.supporting', { n: breakdown.supporting })}</span><span>{t('res.disputing', { n: breakdown.disputing })}</span><span>{t('res.neutral', { n: breakdown.neutral })}</span></div></div>}
+      </ResultDisclosure>
+    </section>
   );
 }
 
@@ -297,7 +391,9 @@ function ShareModal({ result, claim, selected, onClose }: { result: CheckResult;
   const [isDownloading, setIsDownloading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const mood = verdictClass(result.overall_verdict);
-  const sources = claim.sources?.slice(0, 2).map((s) => s.publisher || s.title).filter(Boolean) ?? [];
+  const sources = claim.sources?.filter((s) => {
+    try { return ['http:', 'https:'].includes(new URL(s.url).protocol); } catch { return false; }
+  }).slice(0, 2).map((s) => s.publisher || s.title).filter(Boolean) ?? [];
   const reason = claim.explanation?.split(/[.!?]/)[0] || result.summary || t('share.reasonFallback');
   const copyText = `${claim.text}\n\n${t(verdictKey(result.overall_verdict))}: ${reason}.\n${t('share.checked')}`;
   const shareText = async () => {
@@ -380,27 +476,33 @@ function ResultsView({ result, inputClaim, quickClaim, resultLang, timing, onRes
   const join = (parts: (string | undefined)[]) => parts.map((p) => (p || '').trim()).filter(Boolean).map((p) => (/[.!?।]$/.test(p) ? p : `${p}.`)).join(' ');
   const overallSpeech = join([tr(verdictKey(result.overall_verdict)), actionText, explanationFor(selectedClaim) || result.summary]);
   const claimSpeech = selectedClaim ? join([tr(verdictKey(selectedClaim.verdict)), actionText, explanationFor(selectedClaim)]) : '';
+  const mascotState: MascotState = mood === 'true' ? 'happy' : mood === 'false' ? 'shocked' : 'puzzled';
   return <main className={`main results mood-${mood}`} data-testid="content-results">
-    <div className="results-head"><div><div className="eyebrow"><span className="eyebrow-dot" />{t('res.complete')}</div><h1>{result.overall_verdict === 'TRUE' ? t('res.headTrue') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</h1></div><button className="share-btn" onClick={() => setShareOpen(true)} data-testid="button-open-share"><Share2 size={14} />{t('res.share')}</button></div>
+    <div className="results-head"><div><div className="eyebrow"><span className="eyebrow-dot" />{t('res.complete')}</div><h1>{result.overall_verdict === 'TRUE' ? t('res.headTrue') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</h1></div></div>
     <p className="next-note" data-testid="text-next-check-note">{t('res.nextNote')}</p>
     {timing && <p className="time-note" data-testid="text-check-time">{timing.cache === 'HIT' ? t('wait.instant') : t('wait.took', { n: timing.sec })}</p>}
     <motion.div className={`verdict-hero ${mood}`} initial={{ opacity: 0, y: 12 }} animate={mood === 'false' && !reduceMotion ? { opacity: 1, y: [0, 3, -2, 0] } : { opacity: 1, y: 0 }} transition={{ duration: mood === 'false' ? .36 : .3 }} data-testid="status-overall-verdict">
-      <div><div className="verdict-label"><VerdictIcon verdict={result.overall_verdict} size={21} />{result.overall_verdict === 'TRUE' ? t('res.legit') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</div><p>{result.summary || t('res.summaryFallback')}</p></div><div className="verdict-tools"><div className="action-line">{result.action || t('res.actionFallback')}</div><SpeakButton id="overall" text={overallSpeech} lang={resultLang} ariaKey="read.overallAria" testId="button-read-overall" /></div>
+      <motion.div className={`verdict-sticker ${mood}`} data-testid="badge-overall-verdict" initial={reduceMotion ? { rotate: mood === 'unclear' ? -9 : -5 } : { scale: .3, rotate: mood === 'false' ? -28 : -14 }} animate={mood === 'false' && !reduceMotion ? { scale: 1, rotate: [-12, 6, -6, -5] } : { scale: 1, rotate: mood === 'unclear' ? -9 : -5 }} transition={{ type: 'spring', stiffness: 320, damping: 12 }}><VerdictIcon verdict={result.overall_verdict} size={22} /><span>{t(verdictKey(result.overall_verdict))}</span></motion.div>
+      <div className="verdict-body"><div className="verdict-label">{result.overall_verdict === 'TRUE' ? t('res.legit') : result.overall_verdict === 'FALSE' ? t('res.headFalse') : t('res.headUnclear')}</div><p>{result.summary || t('res.summaryFallback')}</p><div className="action-line">{actionText}</div></div>
+      <div className="verdict-mascot"><DeskMascot state={mascotState} testId="img-mascot-verdict" /></div>
       {result.overall_verdict === 'FALSE' && <motion.div className="verdict-stamp" initial={reduceMotion ? { scale: 1, rotate: -8, opacity: 0 } : { scale: .45, rotate: -15, opacity: 0 }} animate={{ scale: 1, rotate: -8, opacity: .28 }} transition={{ type: 'spring', stiffness: 310, damping: 14, delay: .16 }}>{t('verdict.FALSE')}</motion.div>}
-      {result.overall_verdict === 'TRUE' && !reduceMotion && <div className="verdict-confetti" aria-hidden="true">{['var(--d-v-true)', 'var(--d-vi-true)', 'var(--d-v-true)', 'var(--d-ink)', 'var(--d-v-true)'].map((color, i) => <motion.i key={i} style={{ background: color }} initial={{ opacity: 0, y: -5, rotate: 0 }} animate={{ opacity: [0, .9, 0], y: [0, 28 + i * 3, 52], rotate: [0, 70, 150] }} transition={{ duration: .9, delay: i * .07 }} />)}</div>}
+      {result.overall_verdict === 'UNCLEAR' && <motion.div className="verdict-question" aria-hidden="true" initial={{ rotate: reduceMotion ? -8 : -18, scale: .5, opacity: 0 }} animate={{ rotate: -8, scale: 1, opacity: .22 }} transition={{ type: 'spring', stiffness: 300, damping: 15 }}>?</motion.div>}
+      {result.overall_verdict === 'TRUE' && !reduceMotion && <div className="verdict-confetti" aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((i) => <motion.svg key={i} viewBox="0 0 24 24" width="22" height="22" initial={{ opacity: 0, y: 0, rotate: 0, scale: .4 }} animate={{ opacity: [0, 1, 0], y: [0, 26 + i * 6, 64], x: (i - 2.5) * 14, rotate: [0, 120, 220], scale: 1 }} transition={{ duration: 1.2, delay: .2 + i * .07 }}>{i % 2 ? <path d="M2 14c4-8 6 8 10 0s6 8 10 0" fill="none" stroke={i % 3 ? '#5BB5FF' : '#FF4B3E'} strokeWidth="3.5" strokeLinecap="round" /> : <path d="m12 2 3 7 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill={i === 2 ? '#FFD23F' : '#22C58B'} stroke="#17151F" strokeWidth="1.8" />}</motion.svg>)}</div>}
     </motion.div>
-    <div className="results-grid">
-      <section className="panel panel-pad">
-        <h2 className="panel-title">{t('res.examined')}</h2>
-        <p className="original-text" data-testid="text-original-claim">{renderHighlighted()}</p>
-        <div style={{ marginTop: 17 }}><h3 className="panel-title" style={{ marginBottom: 8 }}>{t('res.claimsFound')}</h3>
-          {result.claims?.map((item, i) => <button key={`${item.text}-${i}`} className={`claim-select ${i === selected ? 'selected' : ''}`} onClick={() => setSelected(i)} data-testid={`button-select-claim-${i}`}><span className={`claim-verdict ${verdictClass(item.verdict)}`}><VerdictIcon verdict={item.verdict} size={13} />{t(verdictKey(item.verdict))}</span>{item.text}</button>)}
-        </div>
-        {result.calm_reply && <div className="reply-card"><h3 className="panel-title" style={{ marginBottom: 7 }}>{t('res.calmReply')}</h3><p>{result.calm_reply}</p><div className="reply-actions"><button className="primary-btn" onClick={() => void copyReply()} data-testid="button-copy-calm-reply">{copied ? <Check size={14} /> : <Clipboard size={14} />}{copied ? t('res.copied') : t('res.copyReply')}</button></div></div>}
-        <CopyQuickLinkButton claim={quickClaim} lang={resultLang} />
-        <button onClick={onReset} className="secondary-btn" style={{ marginTop: 12 }} data-testid="button-new-check"><RotateCcw size={14} />{t('res.another')}</button>
-      </section>
-      {selectedClaim ? <ClaimDetail key={selected} item={selectedClaim} index={selected} tone={tone} setTone={setTone} speech={claimSpeech} lang={resultLang} /> : <div className="panel panel-pad"><h2 className="panel-title">{t('res.noDetailsTitle')}</h2><p className="original-text">{t('res.noDetails')}</p></div>}
+    <div className="results-actions" aria-label={t('res.actions')}>
+      <button className="share-btn" onClick={() => setShareOpen(true)} data-testid="button-open-share"><Share2 size={15} />{t('res.share')}</button>
+      <button className="secondary-btn" onClick={() => void copyReply()} disabled={!result.calm_reply} data-testid="button-copy-calm-reply">{copied ? <Check size={15} /> : <Clipboard size={15} />}{copied ? t('res.copied') : t('res.copyReply')}</button>
+      <SpeakButton id="overall" text={overallSpeech} lang={resultLang} ariaKey="read.overallAria" testId="button-read-overall" />
+    </div>
+    <ClaimDetail key={selected} item={selectedClaim} index={selected} tone={tone} setTone={setTone} calmReply={result.calm_reply} speech={claimSpeech} lang={resultLang} intro={<div className="why-intro">
+      <h3 className="panel-title">{t('res.examined')}</h3>
+      <p className="original-text" data-testid="text-original-claim">{renderHighlighted()}</p>
+      {(result.claims?.length ?? 0) > 1 && <><h3 className="panel-title">{t('res.claimsFound')}</h3>
+        {result.claims?.map((item, i) => <button key={`${item.text}-${i}`} className={`claim-select ${i === selected ? 'selected' : ''}`} onClick={() => setSelected(i)} aria-pressed={i === selected} data-testid={`button-select-claim-${i}`}><span className={`claim-sticker ${verdictClass(item.verdict)}`}><VerdictIcon verdict={item.verdict} size={13} />{t(verdictKey(item.verdict))}</span>{item.text}</button>)}</>}
+    </div>} />
+    <div className="utility-row">
+      <CopyQuickLinkButton claim={quickClaim} lang={resultLang} />
+      <button onClick={onReset} className="secondary-btn" data-testid="button-new-check"><RotateCcw size={14} />{t('res.another')}</button>
     </div>
     <Footer />
     <AnimatePresence>{shareOpen && selectedClaim && <ShareModal result={result} claim={selectedClaim} selected={selected} onClose={() => setShareOpen(false)} />}</AnimatePresence>
@@ -503,7 +605,8 @@ function Experience() {
   const reset = () => { attemptRef.current = { ...attemptRef.current, id: attemptRef.current.id + 1 }; setTiming(null); setAnnounce(''); stopSpeech(); setView('home'); setError(null); setResult(null); setSubmittedClaim(''); mutation.reset(); };
   const mood = view === 'results' && result ? verdictClass(result.overall_verdict) : undefined;
   return <div className="shell" data-mood={mood}>
-    <header className="topbar"><button onClick={reset} style={{ border: 0, background: 'transparent', padding: 0, minHeight: 44 }} aria-label={t('nav.home')} data-testid="button-logo-home"><Logo /></button><div className="nav-right"><button className="nav-link" onClick={reset} data-testid="link-fact-check">{t('nav.factCheck')}</button><label style={{ display: 'flex', alignItems: 'center', gap: 7 }}><span className="sr-only">{t('nav.language')}</span><select className="language" value={language} onChange={(e) => update('language', e.target.value as Lang)} aria-label={t('nav.language')} data-testid="select-language">{LANGS.map((value) => <option key={value} value={value}>{LANGUAGE_NAMES[value]}</option>)}</select></label><SettingsButton /></div></header>
+    <header className="topbar"><button onClick={reset} style={{ border: 0, background: 'transparent', padding: 0, minHeight: 44 }} aria-label={t('nav.home')} data-testid="button-logo-home"><Logo /></button><div className="nav-right"><button className="nav-link" onClick={reset} data-testid="link-fact-check">{t('nav.factCheck')}</button><SettingsButton /></div></header>
+    {view === 'home' && <FirstVisitHint />}
     {view === 'home' && <HomeView onSubmit={submitInput} pending={mutation.isPending} initialClaim={prefill} />}
     {view === 'analysis' && <AnalysisView claim={submittedClaim} attempt={attempt} error={error} pending={mutation.isPending} onRetry={retry} onReset={reset} onAnnounce={announceKey} />}
     {view === 'results' && result && <ResultsView result={result} inputClaim={submittedClaim} quickClaim={lastInput.current?.claim || result.claims?.[0]?.text || ''} resultLang={resultLang} timing={timing} onReset={reset} />}

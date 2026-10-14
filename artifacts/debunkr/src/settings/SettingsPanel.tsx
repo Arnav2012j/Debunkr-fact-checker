@@ -32,7 +32,7 @@ function Panel({ onClose }: { onClose: () => void }) {
   return (
     <>
       <motion.div className="set-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: .2 }} onMouseDown={onClose} data-testid="backdrop-settings" />
-      <motion.div ref={ref} className="set-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title"
+      <motion.div ref={ref} className="set-panel sticker-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title"
         initial={{ opacity: 0, y: reduceMotion ? 0 : 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: reduceMotion ? 0 : 10 }} transition={{ duration: .24, ease: [0.22, 1, 0.36, 1] }} data-testid="panel-settings">
         <div className="set-grip" aria-hidden="true" />
         <div className="set-head">
@@ -75,7 +75,7 @@ export function SettingsButton() {
   const [open, setOpen] = useState(false);
   return (
     <div className="set-anchor">
-      <button type="button" className="gear-btn" aria-label={t('nav.settings')} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="button-open-settings"><SettingsIcon size={18} /></button>
+      <button type="button" className="gear-btn" aria-label={t('nav.settings')} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)} data-testid="button-open-settings"><SettingsIcon size={18} /><span className="gear-label">{t('nav.settings')}</span></button>
       <AnimatePresence>{open && <Panel onClose={() => setOpen(false)} />}</AnimatePresence>
     </div>
   );
