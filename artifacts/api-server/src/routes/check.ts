@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { CheckClaimBody } from "@workspace/api-zod";
 import {
-  checkWithGemini,
-  GeminiRequestError,
+  checkWithLLM,
+  LLMRequestError,
   liveSearchUnavailableResult,
   LiveSearchUnavailableError,
-  UnreadableGeminiResponseError,
+  UnreadableLLMResponseError,
   validateInlineImage,
   type FactCheckInput,
 } from "../lib/geminiFactCheck";
@@ -34,7 +34,7 @@ function checkRateLimit(ip: string, now: number): boolean {
 }
 
 function redactApiKey(value: string): string {
-  for (const key of [process.env.GEMINI_API_KEY, process.env.TAVILY_API_KEY]) {
+  for (const key of [process.env.OPENROUTER_API_KEY, process.env.GEMINI_API_KEY, process.env.TAVILY_API_KEY]) {
     if (key) value = value.replaceAll(key, "[redacted]");
   }
   return value;
@@ -122,7 +122,7 @@ router.post("/check", async (req, res): Promise<void> => {
     }
     const stored = await withinCheckSignal(deadline, "request", () => getOrGenerateCheck(normalizedInput, async () => {
       let model = "";
-      const result = await checkWithGemini(normalizedInput, (event) => {
+      const result = await checkWithLLM(normalizedInput, (event) => {
         if (event.grounded) model = event.model;
         if (!res.headersSent && !res.destroyed) {
           if (event.model) res.setHeader("X-Debunkr-Model", event.model);
@@ -130,12 +130,13 @@ router.post("/check", async (req, res): Promise<void> => {
         }
         const details = {
           ...event,
-          stage: event.tavilyResults !== undefined ? "search" : "gemini",
+          stage: event.tavilyResults !== undefined ? "search" : "llm",
+          provider: event.tavilyResults !== undefined ? "tavily" : "openrouter",
           ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
         };
         if (event.tavilyResults !== undefined) req.log.info(details, "Tavily search completed");
-        else if (event.status >= 400 || event.timedOut) req.log.warn(details, "Gemini attempt failed");
-        else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
+        else if (event.errorText || event.timedOut) req.log.warn(details, "OpenRouter attempt failed");
+        else req.log.info(details, event.grounded ? "OpenRouter grounded check completed" : "OpenRouter attempt completed");
       }, deadline);
       return { result, model };
     }, logCache));
@@ -160,12 +161,12 @@ router.post("/check", async (req, res): Promise<void> => {
       return;
     }
 
-    if (error instanceof GeminiRequestError) {
+    if (error instanceof LLMRequestError) {
       req.log.error(
         { httpStatus: error.status, errorText: redactApiKey(error.responseText) },
-        "Gemini request failed",
+        "OpenRouter request failed",
       );
-      if (error.responseText === "Missing GEMINI_API_KEY") {
+      if (error.responseText === "Missing OPENROUTER_API_KEY") {
         res.status(503).json({
           error: "The fact-check service is not configured yet.",
           code: "KEY_MISSING",
@@ -174,7 +175,7 @@ router.post("/check", async (req, res): Promise<void> => {
       }
       if (error.status === 429) {
         res.status(429).json({
-          error: "Daily free limit reached. Please try again later.",
+          error: "The free checking service is busy or rate-limited. Please try again later. No verdict was produced.",
           code: "GEMINI_RATE_LIMITED",
         });
         return;
@@ -187,7 +188,7 @@ router.post("/check", async (req, res): Promise<void> => {
         )
       ) {
         res.status(401).json({
-          error: "The fact-check service could not authenticate with Gemini.",
+          error: "The fact-check service could not authenticate with OpenRouter.",
           code: "INVALID_KEY",
         });
         return;
@@ -199,13 +200,13 @@ router.post("/check", async (req, res): Promise<void> => {
       return;
     }
 
-    if (error instanceof UnreadableGeminiResponseError) {
+    if (error instanceof UnreadableLLMResponseError) {
       req.log.error(
         { errorText: redactApiKey(error.responseText) },
-        "Gemini returned an unreadable response",
+        "OpenRouter returned an unreadable response",
       );
       res.status(502).json({
-        error: "Gemini returned an unreadable response. Please retry the check.",
+        error: "The checking model returned an unreadable response. Please retry the check.",
         code: "UNREADABLE_RESPONSE",
       });
       return;

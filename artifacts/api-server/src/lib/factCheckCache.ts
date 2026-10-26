@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CheckClaimResponse } from "@workspace/api-zod";
 import type { FactCheckInput } from "./geminiFactCheck";
+import { OPENROUTER_MODELS } from "./openRouter";
 
 type Result = ReturnType<typeof CheckClaimResponse.parse>;
 export interface StoredCheck {
@@ -63,7 +64,8 @@ function loadCache(log?: CacheLogger): Promise<void> {
       for (const [key, value] of Object.entries(data.entries)) {
         const stored = value as StoredCheck;
         const result = CheckClaimResponse.parse(stored.result);
-        if (typeof stored.model !== "string" || !stored.model.startsWith("gemini-") ||
+        if (typeof stored.model !== "string" ||
+            !(stored.model.startsWith("gemini-") || OPENROUTER_MODELS.some(model => model === stored.model)) ||
             !result.claims.some((claim) => claim.sources.length > 0)) {
           throw new Error("Invalid grounded fact-check cache entry");
         }

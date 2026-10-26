@@ -1,7 +1,7 @@
 export const CHECK_TIMEOUT_MS = 20_000;
 
 export class CheckTimeoutError extends Error {
-  constructor(readonly stage: "request" | "cache" | "search" | "gemini") {
+  constructor(readonly stage: "request" | "cache" | "search" | "llm" | "gemini") {
     super("This check took too long. Please try again in a moment.");
     this.name = "CheckTimeoutError";
   }

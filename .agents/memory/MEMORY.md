@@ -1,4 +1,4 @@
-- [Gemini model access](gemini-model-access.md) — grounding capability in documentation does not guarantee that this API project can access a model.
+- [Provider model access](gemini-model-access.md) — distinguish catalog capability/pricing from successful authenticated generation with the deployment's key.
 - [Browser speech policy](browser-speech-policy.md) — speech and quick-link conveniences must not regenerate or translate results through extra AI calls.
 - [Theme intent](theme-intent.md) — verdicts change stickers and accents, never the user's selected base theme.
 - [Check timeout budgets](check-timeout-budgets.md) — a fast primary check does not prove worst-case fallback fits inside the browser deadline.

@@ -15,6 +15,8 @@ const nativeFetch = globalThis.fetch;
 const nativeTimeout = AbortSignal.timeout.bind(AbortSignal);
 const systemTemp = tmpdir();
 let fixtureId = 0;
+const primaryModel = "dots-studio/dots-3-note-preview:free";
+const fallbackModel = "google/gemma-4-26b-a4b-it:free";
 const evidence = {
   title: "Mock astronomy evidence — test fixture",
   url: "https://evidence.test/solar-system",
@@ -58,13 +60,14 @@ async function withApp(t, options, run) {
   const temp = await mkdtemp(join(systemTemp, "debunkr-check-test-"));
   const cwd = process.cwd();
   const previous = Object.fromEntries(
-    ["TMPDIR", "VERCEL", "NODE_ENV"].map(key => [key, process.env[key]]),
+    ["TMPDIR", "VERCEL", "NODE_ENV", "OPENROUTER_API_KEY", "TAVILY_API_KEY"].map(key => [key, process.env[key]]),
   );
   const calls = { search: 0, models: [], bodies: [], timeouts: [] };
   let server;
   try {
     // Process-local placeholders only; do not change workspace/deployment secrets.
-    process.env.GEMINI_API_KEY = "mock-gemini-key";
+    if (options.missingKey) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = "mock-openrouter-key";
     process.env.TAVILY_API_KEY = "mock-tavily-key";
     process.env.NODE_ENV = "production";
     process.env.VERCEL = options.replit ? "" : "1";
@@ -77,6 +80,10 @@ async function withApp(t, options, run) {
     if (options.corruptCache) {
       await mkdir(cache, { recursive: true });
       await writeFile(join(cache, "checks.json"), "{broken JSON");
+    }
+    if (options.preloadedCache) {
+      await mkdir(cache, { recursive: true });
+      await writeFile(join(cache, "checks.json"), options.preloadedCache);
     }
     if (options.fastTimers) {
       t.mock.method(AbortSignal, "timeout", (ms) => {
@@ -93,17 +100,36 @@ async function withApp(t, options, run) {
         if (options.searchFails) return Response.json({ error: "Mock unavailable" }, { status: 503 });
         return Response.json({ results: [evidence] });
       }
-      if (url.startsWith("https://generativelanguage.googleapis.com/v1beta/models/")) {
-        calls.models.push(url.split("/models/")[1].split(":")[0]);
-        calls.bodies.push(JSON.parse(init.body));
-        if (options.geminiHangs) return waitForAbort(init.signal);
-        if (options.geminiBodyHangs) return stalledBody(init.signal);
+      if (url === "https://openrouter.ai/api/v1/chat/completions") {
+        const body = JSON.parse(init.body);
+        calls.models.push(body.model);
+        calls.bodies.push(body);
+        assert.equal(init.headers.Authorization, "Bearer mock-openrouter-key");
+        if (options.llmHangs) return waitForAbort(init.signal);
+        if (options.llmBodyHangs) return stalledBody(init.signal);
+        if (options.providerStatus) {
+          return Response.json({ error: { message: "Mock provider failure" } }, { status: options.providerStatus });
+        }
+        if (options.embeddedError) {
+          const error = { code: 503, message: "Mock unavailable inside HTTP 200" };
+          return Response.json(options.embeddedError === "choice" ? { choices: [{ error }] } : { error });
+        }
+        if (options.invalidEnvelope) return new Response("not JSON", { headers: { "content-type": "application/json" } });
         if (options.primaryFails && calls.models.length === 1) {
           return Response.json({ error: "Mock overloaded" }, { status: 503 });
         }
         const output = structuredClone(model);
         if (options.unsupportedVerdict) output.claims[0].source_refs = [];
-        return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(output) }] } }] });
+        if (options.conflictingRefs) output.claims[0].source_refs = [
+          { index: 1, stance: "supports" }, { index: 1, stance: "disputes" },
+        ];
+        return Response.json({ choices: [{
+          finish_reason: options.truncated ? "length" : "stop",
+          message: {
+            content: options.emptyCompletion ? "" : options.refused ? null : options.invalidJSON ? "not JSON" : JSON.stringify(output),
+            ...(options.refused ? { refusal: "Mock refusal" } : {}),
+          },
+        }] });
       }
       throw new Error("Unexpected external request blocked by test");
     });
@@ -114,11 +140,11 @@ async function withApp(t, options, run) {
       server.once("listening", resolveListening);
       server.once("error", reject);
     });
-    const post = async (claim = "Mock orbital claim.", language = "English") => {
+    const post = async (claim = "Mock orbital claim.", language = "English", extra = {}) => {
       const response = await nativeFetch(`http://127.0.0.1:${server.address().port}/api/check`, {
         method: "POST",
         headers: { "content-type": "application/json", Origin: "https://frontend.test" },
-        body: JSON.stringify({ claim, language }),
+        body: JSON.stringify({ claim, language, ...extra }),
       });
       return { status: response.status, headers: response.headers, body: await response.json() };
     };
@@ -131,8 +157,6 @@ async function withApp(t, options, run) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.TAVILY_API_KEY;
     await rm(temp, { recursive: true, force: true });
   }
 }
@@ -153,17 +177,21 @@ test("mocked API flow (external provider calls are always blocked)", async t => 
     await withApp(t, { readOnlyCwd: true }, async ({ post, calls, cache }) => {
       const result = await post();
       assertSupported(result);
-      assert.equal(result.headers.get("x-debunkr-model"), "gemini-3.1-flash-lite");
+      assert.equal(result.headers.get("x-debunkr-model"), primaryModel);
       assert.match(result.headers.get("access-control-expose-headers"), /X-Debunkr-Cache/i);
       assert.equal(JSON.parse(await readFile(join(cache, "checks.json"), "utf8")).version, 1);
       const cached = await post("  MOCK   ORBITAL CLAIM. ");
       assertSupported(cached);
       assert.equal(cached.headers.get("x-debunkr-cache"), "HIT");
-      assert.deepEqual(calls.models, ["gemini-3.1-flash-lite"]);
+      assert.deepEqual(calls.models, [primaryModel]);
       assert.equal(calls.search, 1);
       await post("Mock orbital claim.", "French");
       assert.equal(calls.search, 2, "language remains part of the cache key");
-      assert.equal(calls.bodies[0].contents[0].parts[0].text.includes(evidence.content), true);
+      assert.equal(calls.bodies[0].messages[0].content[0].text.includes(evidence.content), true);
+      assert.deepEqual(calls.bodies[0].provider, { require_parameters: true, max_price: { prompt: 0, completion: 0 } });
+      assert.equal(calls.bodies[0].max_tokens, 2500);
+      assert.deepEqual(calls.bodies[0].response_format, { type: "json_object" });
+      assert.deepEqual(calls.bodies[0].reasoning, { enabled: false });
     });
   });
   await t.test("Replit keeps its working-directory cache", async t => {
@@ -191,8 +219,8 @@ test("mocked API flow (external provider calls are always blocked)", async t => 
     await withApp(t, { primaryFails: true }, async ({ post, calls }) => {
       assertSupported(await post());
       assert.equal(calls.search, 1);
-      assert.deepEqual(calls.models, ["gemini-3.1-flash-lite", "gemini-3.8-flash"]);
-      assert.deepEqual(calls.bodies[0].contents, calls.bodies[1].contents);
+      assert.deepEqual(calls.models, [primaryModel, fallbackModel]);
+      assert.deepEqual(calls.bodies[0].messages, calls.bodies[1].messages);
     });
   });
   await t.test("search outage retains the source-free UNCLEAR fallback and is not cached", async t => {
@@ -217,7 +245,92 @@ test("mocked API flow (external provider calls are always blocked)", async t => 
       assert.equal(calls.search, 2);
     });
   });
-  for (const kind of ["searchHangs", "searchBodyHangs", "geminiHangs", "geminiBodyHangs"]) {
+  await t.test("OpenRouter results can be reloaded from the JSON cache after a cold start", async t => {
+    let savedCache;
+    await withApp(t, {}, async ({ post, cache }) => {
+      assertSupported(await post());
+      savedCache = await readFile(join(cache, "checks.json"), "utf8");
+    });
+    await withApp(t, { preloadedCache: savedCache }, async ({ post, calls }) => {
+      const result = await post();
+      assertSupported(result);
+      assert.equal(result.headers.get("x-debunkr-cache"), "HIT");
+      assert.equal(result.headers.get("x-debunkr-model"), primaryModel);
+      assert.equal(calls.search, 0);
+      assert.equal(calls.models.length, 0);
+    });
+  });
+  await t.test("missing OpenRouter key fails clearly before calling Tavily", async t => {
+    await withApp(t, { missingKey: true }, async ({ post, calls }) => {
+      const result = await post();
+      assert.equal(result.status, 503);
+      assert.equal(result.body.code, "KEY_MISSING");
+      assert.equal("overall_verdict" in result.body, false);
+      assert.equal(calls.search, 0);
+      assert.equal(calls.models.length, 0);
+    });
+  });
+  for (const status of [400, 401, 402, 403, 404, 429, 503]) {
+    await t.test(`OpenRouter HTTP ${status} returns an error, never a verdict or cached success`, async t => {
+      await withApp(t, { providerStatus: status }, async ({ post, calls }) => {
+        const expectedStatus = status === 429 ? 429 : [401, 403].includes(status) ? 401 : 502;
+        for (let i = 0; i < 2; i++) {
+          const result = await post();
+          assert.equal(result.status, expectedStatus);
+          assert.equal("overall_verdict" in result.body, false);
+          assert.equal(result.headers.get("x-debunkr-cache"), null);
+        }
+        assert.equal(calls.search, 2);
+        const expectedModels = [404, 429, 503].includes(status)
+          ? [primaryModel, fallbackModel, primaryModel, fallbackModel]
+          : [primaryModel, primaryModel];
+        assert.deepEqual(calls.models, expectedModels);
+      });
+    });
+  }
+  for (const embeddedError of ["top", "choice"]) {
+    await t.test(`HTTP 200 with a ${embeddedError}-level provider error is not treated as success`, async t => {
+      await withApp(t, { embeddedError }, async ({ post, calls }) => {
+        const result = await post();
+        assert.equal(result.status, 502);
+        assert.equal(result.body.code, "GEMINI_ERROR"); // Legacy wire code; provider is OpenRouter.
+        assert.equal("overall_verdict" in result.body, false);
+        assert.deepEqual(calls.models, [primaryModel, fallbackModel]);
+      });
+    });
+  }
+  for (const invalid of ["invalidJSON", "truncated", "refused", "invalidEnvelope", "emptyCompletion"]) {
+    await t.test(`${invalid} completion produces no verdict and is not cached`, async t => {
+      await withApp(t, { [invalid]: true }, async ({ post, calls }) => {
+        for (let i = 0; i < 2; i++) {
+          const result = await post();
+          assert.equal(result.status, 502);
+          assert.equal(result.body.code, "UNREADABLE_RESPONSE");
+          assert.equal("overall_verdict" in result.body, false);
+        }
+        assert.equal(calls.search, 2);
+      });
+    });
+  }
+  await t.test("conflicting source stances still prevent an unsupported TRUE verdict", async t => {
+    await withApp(t, { conflictingRefs: true }, async ({ post }) => {
+      const result = await post();
+      assert.equal(result.body.overall_verdict, "UNCLEAR");
+      assert.equal(result.body.claims[0].sources[0].url, evidence.url);
+      assert.equal(result.body.claims[0].evidence_breakdown.neutral, 1);
+    });
+  });
+  await t.test("image plus claim is transported as an image URL data part, never an invented source", async t => {
+    await withApp(t, {}, async ({ post, calls }) => {
+      assertSupported(await post("Mock orbital claim.", "English", {
+        imageBase64: "iVBORw0KGgo=", imageMime: "image/png",
+      }));
+      assert.deepEqual(calls.bodies[0].messages[0].content[1], {
+        type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo=" },
+      });
+    });
+  });
+  for (const kind of ["searchHangs", "searchBodyHangs", "llmHangs", "llmBodyHangs"]) {
     await t.test(`${kind} returns an explicit timeout, with no verdict`, async t => {
       await withApp(t, { [kind]: true, fastTimers: true }, async ({ post, calls }) => {
         const start = performance.now();
@@ -231,7 +344,7 @@ test("mocked API flow (external provider calls are always blocked)", async t => 
         assert(performance.now() - start < 1000, "scaled overall deadline must bound all attempts");
         if (kind.startsWith("search")) assert.equal(calls.models.length, 0);
         else {
-          assert.deepEqual(calls.models, ["gemini-3.1-flash-lite", "gemini-3.8-flash"]);
+          assert.deepEqual(calls.models, [primaryModel, fallbackModel]);
           assert.equal(calls.timeouts.filter(ms => ms === 12_000).length, 2);
         }
       });
