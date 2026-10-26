@@ -3,3 +3,4 @@
 - [Theme intent](theme-intent.md) — verdicts change stickers and accents, never the user's selected base theme.
 - [Check timeout budgets](check-timeout-budgets.md) — a fast primary check does not prove worst-case fallback fits inside the browser deadline.
 - [Wait estimate intent](wait-estimate-intent.md) — elapsed-time estimates must not imply actual provider progress or a completed verdict.
+- [Vercel hidden emit errors](vercel-hidden-emit-errors.md) — Node builder can hide TS6059 behind “Emit skipped”; reproduce its language-service path.
