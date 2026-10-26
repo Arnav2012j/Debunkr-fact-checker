@@ -30,7 +30,7 @@ const queryClient = new QueryClient();
 const exampleKeys: TKey[] = ['home.ex1', 'home.ex2', 'home.ex3'];
 const placeholderKeys: TKey[] = ['home.ph1', 'home.ph2', 'home.ph3'];
 type UiError = { key: TKey } | null;
-const API_CODES = ['INVALID_INPUT', 'INVALID_URL', 'INVALID_IMAGE', 'RATE_LIMIT_REACHED', 'KEY_MISSING', 'GEMINI_RATE_LIMITED', 'INVALID_KEY', 'GEMINI_ERROR', 'UNREADABLE_RESPONSE', 'INTERNAL_ERROR', 'REQUEST_TOO_LARGE'] as const;
+const API_CODES = ['INVALID_INPUT', 'INVALID_URL', 'INVALID_IMAGE', 'RATE_LIMIT_REACHED', 'KEY_MISSING', 'GEMINI_RATE_LIMITED', 'INVALID_KEY', 'GEMINI_ERROR', 'UNREADABLE_RESPONSE', 'INTERNAL_ERROR', 'REQUEST_TOO_LARGE', 'CHECK_TIMEOUT'] as const;
 
 function Logo() {
   return <div className="logo" aria-label="Debunkr"><span className="logo-mark"><ShieldCheck size={16} strokeWidth={2.6} /></span><span>Debunkr</span></div>;
@@ -615,6 +615,10 @@ function Experience() {
 }
 
 function toUiError(err: unknown): UiError {
+  const status = (err as { status?: unknown } | null)?.status;
+  if ((err instanceof Error && err.name === 'TimeoutError') || status === 504 || status === 408) {
+    return { key: 'err.CHECK_TIMEOUT' };
+  }
   const data = (err as { data?: unknown } | null)?.data;
   const code = data && typeof data === 'object' ? (data as { code?: unknown }).code : undefined;
   if (typeof code === 'string' && (API_CODES as readonly string[]).includes(code)) return { key: `err.${code}` as TKey };

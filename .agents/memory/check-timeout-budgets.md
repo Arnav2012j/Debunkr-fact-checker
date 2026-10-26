@@ -2,8 +2,8 @@
 name: Check timeout budgets
 description: Distinguish the browser's whole-check deadline from per-provider timeouts.
 ---
-A successful primary-model check does not prove that fallback will finish before the browser's deadline.
+All provider stages and fallback attempts must share one server-side request deadline. Keep the browser deadline slightly longer so it can receive the server's explicit timeout response.
 
-**Why:** The user explicitly requested a browser deadline shorter than the worst-case search plus two full model attempts. These limits were kept as requested, rather than silently increasing the browser timeout.
+**Why:** The user replaced the earlier independent provider/browser limits after the fallback chain could outlive the browser and surface a generic error. The priority is now a bounded wait and an honest failure, not giving every model a fresh full timeout.
 
-**How to apply:** Account for the entire search-and-judge chain when discussing timeout guarantees. Obtain approval before changing explicitly requested deadlines to accommodate worst-case fallback time.
+**How to apply:** Limit each stage by the remaining overall budget, include body reads and cache work, and never start fallback after the request deadline. Preserve evidence checks; a deadline must return an error, never an invented verdict. Treat the normal-provider speed goal as a target, not a measured guarantee.

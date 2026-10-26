@@ -368,7 +368,7 @@ export async function customFetch<T = unknown>(
   const abort = () => controller.abort(originalSignal?.reason);
   if (originalSignal?.aborted) abort();
   else originalSignal?.addEventListener("abort", abort, { once: true });
-  const timer = checkRequest ? setTimeout(() => controller.abort(new DOMException("Check timed out", "TimeoutError")), 60_000) : undefined;
+  const timer = checkRequest ? setTimeout(() => controller.abort(new DOMException("Check timed out", "TimeoutError")), 22_000) : undefined;
   try {
   const response = await fetch(input, { ...init, method, headers, signal: checkRequest ? controller.signal : originalSignal });
   if (onResponse) {

@@ -9,7 +9,8 @@ import {
   validateInlineImage,
   type FactCheckInput,
 } from "../lib/geminiFactCheck";
-import { findCachedCheck, getOrGenerateCheck } from "../lib/factCheckCache";
+import { findCachedCheck, getOrGenerateCheck, type CacheEvent } from "../lib/factCheckCache";
+import { CHECK_TIMEOUT_MS, CheckTimeoutError, withinCheckSignal } from "../lib/checkDeadline";
 
 const router: IRouter = Router();
 const RATE_LIMIT = 8;
@@ -56,6 +57,19 @@ function containsOnlyHttpUrls(value: string): boolean {
 }
 
 router.post("/check", async (req, res): Promise<void> => {
+  const requestStart = performance.now();
+  const deadline = AbortSignal.timeout(CHECK_TIMEOUT_MS);
+  res.once("finish", () => {
+    req.log.info({
+      stage: "request",
+      durationMs: Math.round(performance.now() - requestStart),
+      httpStatus: res.statusCode,
+    }, "Fact check request completed");
+  });
+  const logCache = (event: CacheEvent) => {
+    if (event.outcome === "error") req.log.warn(event, "Fact check cache storage unavailable");
+    else req.log.info(event, "Fact check cache completed");
+  };
   const parsed = CheckClaimBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -91,7 +105,7 @@ router.post("/check", async (req, res): Promise<void> => {
 
   try {
     const normalizedInput = { ...input, claim };
-    const cached = await findCachedCheck(normalizedInput);
+    const cached = await withinCheckSignal(deadline, "cache", () => findCachedCheck(normalizedInput, logCache));
     if (cached) {
       res.setHeader("X-Debunkr-Cache", "HIT");
       res.setHeader("X-Debunkr-Model", cached.model);
@@ -106,26 +120,37 @@ router.post("/check", async (req, res): Promise<void> => {
       });
       return;
     }
-    const stored = await getOrGenerateCheck(normalizedInput, async () => {
+    const stored = await withinCheckSignal(deadline, "request", () => getOrGenerateCheck(normalizedInput, async () => {
       let model = "";
       const result = await checkWithGemini(normalizedInput, (event) => {
         if (event.grounded) model = event.model;
-        if (event.model) res.setHeader("X-Debunkr-Model", event.model);
-        if (event.tavilyResults !== undefined) res.setHeader("X-Debunkr-Search-Results", event.tavilyResults);
+        if (!res.headersSent && !res.destroyed) {
+          if (event.model) res.setHeader("X-Debunkr-Model", event.model);
+          if (event.tavilyResults !== undefined) res.setHeader("X-Debunkr-Search-Results", event.tavilyResults);
+        }
         const details = {
           ...event,
+          stage: event.tavilyResults !== undefined ? "search" : "gemini",
           ...(event.errorText ? { errorText: redactApiKey(event.errorText) } : {}),
         };
         if (event.tavilyResults !== undefined) req.log.info(details, "Tavily search completed");
-        else if (event.status >= 400) req.log.warn(details, "Gemini attempt failed");
+        else if (event.status >= 400 || event.timedOut) req.log.warn(details, "Gemini attempt failed");
         else req.log.info(details, event.grounded ? "Gemini grounded check completed" : "Gemini attempt completed");
-      });
+      }, deadline);
       return { result, model };
-    });
+    }, logCache));
     res.setHeader("X-Debunkr-Cache", input.imageBase64 ? "BYPASS" : "MISS");
     res.setHeader("X-Debunkr-Model", stored.model);
     res.json(stored.result);
   } catch (error) {
+    if (error instanceof CheckTimeoutError) {
+      req.log.warn({ stage: error.stage, durationMs: Math.round(performance.now() - requestStart) }, "Fact check timed out");
+      res.status(504).json({
+        error: error.message,
+        code: "CHECK_TIMEOUT",
+      });
+      return;
+    }
     if (error instanceof LiveSearchUnavailableError) {
       req.log.error(
         { httpStatus: error.status, errorText: redactApiKey(error.responseText) },

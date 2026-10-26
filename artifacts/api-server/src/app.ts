@@ -27,7 +27,9 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({
+  exposedHeaders: ["X-Debunkr-Cache", "X-Debunkr-Model", "X-Debunkr-Search-Results"],
+}));
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
