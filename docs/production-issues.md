@@ -80,6 +80,11 @@ image-only empty-search limitation is not changed by this provider migration.
   than claiming every upstream throttle is daily quota exhaustion.
 - The historical filename `geminiFactCheck.ts` now holds provider-independent
   evidence/prompt/result logic; `openRouter.ts` holds the transport.
+- `/api/check` explicitly selects OpenRouter and never automatically falls back
+  to Gemini. The original Gemini key name, model list, Google request format,
+  image handling, thinking-level fallback, and Gemini-to-Gemini model fallback
+  remain in `geminiProvider.ts`, reachable only through the explicit
+  `checkWithGemini` entry point.
 - Cache writes remain non-fatal. Cache loading accepts the selected OpenRouter
   model IDs as well as old Gemini entries. Existing real cached results are not
   deleted, and a cache hit can therefore still report an old Gemini model.
@@ -103,6 +108,8 @@ settings, fallback and deadlines, HTTP and embedded failures, malformed/refused/
 truncated responses, missing credentials, image transport, citation preservation,
 unsupported verdict downgrade, cache cold starts/write failures and client routing.
 Mock fixtures are test data, not stored production fact-check results.
+Additional tests verify retained Gemini request settings, model fallback,
+thinking-setting rejection, auth errors, malformed response handling, and deadlines.
 
 ### Local verification results (2026-10-26)
 
@@ -110,7 +117,7 @@ Mock fixtures are test data, not stored production fact-check results.
 | --- | --- |
 | API typecheck | PASS |
 | API esbuild build | PASS |
-| Mocked API/client tests | PASS — 34 tests, 0 failures |
+| Mocked API/client and retained-Gemini tests | PASS — 40 tests, 0 failures |
 | Frontend typecheck | PASS |
 | Frontend Vite production build | PASS |
 | Authenticated primary availability probe | PASS — valid JSON, HTTP 200, 1633 ms |

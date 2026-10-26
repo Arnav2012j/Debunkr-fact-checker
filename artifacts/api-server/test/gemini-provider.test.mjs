@@ -94,7 +94,8 @@ test("retained Gemini authentication failure does not fall back", async t => {
 });
 test("retained Gemini malformed output never becomes a verdict", async t => {
   await fixture(t, "malformed", async ({ checkWithGemini }, calls) => {
-    await assert.rejects(checkWithGemini({ claim: "Mock claim.", language: "English" }), /valid JSON object/);
+    await assert.rejects(checkWithGemini({ claim: "Mock claim.", language: "English" }),
+      e => e.name === "UnreadableLLMResponseError" && e.responseText.includes("valid JSON object"));
     assert.equal(calls.models.length, 1);
   });
 });

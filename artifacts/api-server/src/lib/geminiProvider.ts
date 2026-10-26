@@ -76,7 +76,7 @@ export async function requestGeminiText(
   const candidate = record(Array.isArray(body?.candidates) ? body.candidates[0] : undefined);
   const content = record(candidate?.content);
   const responseParts = Array.isArray(content?.parts) ? content.parts : [];
-  return responseParts.map(part => record(part)?.text)
+  return responseParts.filter(part => record(part)?.thought !== true).map(part => record(part)?.text)
     .filter((text): text is string => typeof text === "string").join("\n").trim();
 }
 
