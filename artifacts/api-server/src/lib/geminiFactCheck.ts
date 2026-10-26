@@ -2,7 +2,7 @@ import { CheckClaimResponse } from "@workspace/api-zod";
 import { searchClaim, SearchUnavailableError, type SearchResult } from "./tavilySearch";
 
 // ListModels + one plain generateContent probe each returned HTTP 200.
-const MODELS = ["gemini-3.8-flash", "gemini-3.7-flash"] as const;
+const MODELS = ["gemini-3.1-flash-lite", "gemini-3.8-flash"] as const;
 const GEMINI_TIMEOUT_MS = 45_000;
 let thinkingEnabled = true;
 export interface GeminiAttemptEvent {
